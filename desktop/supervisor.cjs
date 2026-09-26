@@ -100,8 +100,11 @@ class ServiceSupervisor extends EventEmitter {
     if (this.dataDir) args.push('--data-dir', this.dataDir);
     if (this.config) args.push('--config', this.config);
     const env = { ...process.env, PYTHONUTF8: '1', PYTHONUNBUFFERED: '1' };
+    delete env.__PYVENV_LAUNCHER__;
+    delete env.PYTHONHOME;
+    delete env.PYTHONPATH;
     this.startedAt = Date.now();
-    const child = spawn(this.python, args, { cwd: this.cwd, env, windowsHide: true, stdio: 'ignore', shell: false });
+    const child = spawn(this.python, args, { cwd: this.cwd, env, windowsHide: true, stdio: process.env.AIEYRA_CONTROL_PACKAGE_TEST === '1' ? 'inherit' : 'ignore', shell: false });
     this.child = child;
     this.publish({ state: 'starting', ownership: 'owned', error: null, restarts: this.state.restarts + 1 });
     child.once('error', () => {

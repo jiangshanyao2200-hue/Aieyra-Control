@@ -15,6 +15,7 @@ def initialize(configuration=None):
     root=data_root()
     for name in ('config','shared','agents','desktop','logs','cache','updates','backups'):
         (root/name).mkdir(parents=True,exist_ok=True)
+    (root/'shared/projects').mkdir(exist_ok=True)
     target=configuration_file()
     if not target.exists():
         value=configuration or {'coordination_mode':'local','os_runtime_registration':False,
