@@ -402,6 +402,12 @@ class AgentAccess:
             rows = [dict(r) for r in db.execute("SELECT * FROM deliveries WHERE target=? AND target_thread_id=? AND state IN ('queued','received','running') ORDER BY created_at LIMIT 100",
                                                (peer['actor_id'], 'bridge:' + session_id))]
         notices=[]
+        if self.is_leader(peer):
+            feedback=self.app.feedback.list(peer)['feedback']
+            notices.append({'kind':'private_feedback_policy','action':'report_confirmed_product_issue_promptly',
+                'submit':'cloud/feedback','privacy_review_required':True,'no_project_or_chat_upload':True,
+                'pending':sum(r['state']=='queued' for r in feedback),
+                'attention':sum(r['state'] in ('paused','rejected') for r in feedback)})
         cloud=self.app.cloud.status()
         if cloud['enabled'] and (cloud.get('release') or {}).get('manifest'):
             registry=self.remote(peer['identity'],'registry')
@@ -578,6 +584,12 @@ class AgentAccess:
     def cloud_action(self, peer, action, value):
         session=self.session(peer,value.get('session_id'))
         self.validate_center(peer,session)
+        if action in ('feedback','feedback-cancel'):
+            self.require_leader(peer)
+            self.session(peer,value.get('session_id'))
+            if action=='feedback-cancel':return self.app.feedback.cancel(peer,value)
+            from main import VERSION
+            return self.app.feedback.enqueue(peer,value,VERSION)
         if action=='share':
             if set(value)!={'request_id','session_id','body','public_consent'}:
                 raise AgentError('invalid_public_share_fields')
@@ -585,3 +597,11 @@ class AgentAccess:
                 'agent':peer['name'],'body':value['body'],'public_consent':value['public_consent']})
         if action=='check':return self.app.cloud.check()
         raise AgentError('cloud_action_not_supported',404)
+
+    def is_leader(self,peer,project=None):
+        grants=self.remote(peer['identity'],'registry').get('governance',[])
+        return any(g.get('active') and g.get('role')=='leader' and g.get('actor_id')==peer['actor_id'] and
+                   ((project or peer['project']) in g.get('projects',[]) or '*' in g.get('projects',[])) for g in grants)
+
+    def require_leader(self,peer):
+        if not self.is_leader(peer):raise AgentError('feedback_leader_required',403)

@@ -147,6 +147,10 @@ def schema(properties, required=()):
 
 STR = {'type': 'string'}
 TOOLS = [
+    ('aieyra_feedback', 'Leader: promptly report a confirmed Control software defect through the private official channel. Select only product diagnostics, redact secrets/IPs/paths, and review privacy. Never include project/chat contents. Persist request_id; queued is not yet received.',
+     schema({'request_id':STR,'session_id':STR,'report':{'type':'object'},'privacy_reviewed':{'type':'boolean'}},('request_id','session_id','report','privacy_reviewed'))),
+    ('aieyra_feedback_status', 'Leader: inspect durable private feedback and website receipt; never assume queued means received or fixed.', schema({})),
+    ('aieyra_feedback_cancel', 'Leader: cancel an unsent diagnostic report.',schema({'session_id':STR,'id':STR},('session_id','id'))),
     ('aieyra_info', 'Read protocol and available native center operations.', schema({})),
     ('aieyra_seats', 'List seats assigned to this agent and whether they can be selected.', schema({})),
     ('aieyra_memory', 'Read project blueprint, timeline, checkpoint, recovery and index before starting work. History and previous revisions remain available.',
@@ -186,6 +190,8 @@ def invoke(client, name, arguments):
         if (expected and type(value) is not expected) or ('enum' in shape and value not in shape['enum']):
             raise ClientError('invalid_tool_arguments')
     action = name.removeprefix('aieyra_')
+    if action=='feedback_status':return client.call('cloud/feedback')
+    if action in ('feedback','feedback_cancel'):return client.call('cloud/'+action.replace('_','-'),arguments)
     if action in ('info', 'seats'):
         return client.call(action)
     if action == 'memory':

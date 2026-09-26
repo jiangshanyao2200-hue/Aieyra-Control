@@ -22,7 +22,7 @@ def smoke(root,mac=False):
                     if process.poll() is not None:raise RuntimeError('packaged_service_failed: '+log.read_text()[-2000:])
                     try:
                         value=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=1))
-                        if value.get('version')!='0.6.0':raise RuntimeError('wrong_version')
+                        if value.get('version')!=json.loads((root/'desktop/package.json').read_text(encoding='utf-8'))['version']:raise RuntimeError('wrong_version')
                         break
                     except (OSError,ValueError):time.sleep(.2)
                 else:raise RuntimeError('service_start_timeout')

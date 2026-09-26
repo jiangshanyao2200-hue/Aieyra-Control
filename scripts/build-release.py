@@ -16,7 +16,7 @@ def build(output,key_path,python_dir,electron_dir,sequence,version='0.6.0'):
     with zipfile.ZipFile(source,'w',zipfile.ZIP_DEFLATED,compresslevel=7) as z:
         for name,data in sorted(files.items()):z.writestr(name,data)
     manifest={'schema':1,'product':'aieyra-control','version':version,'sequence':sequence,'created_at':int(time.time()),
-        'minimum_updater':1,'notes':'软件目录内配置与共享数据库、账号登录、受限下载和更新推送，Windows EXE 与 macOS 原生发行。',
+        'minimum_updater':1,'notes':'领导工位私密反馈、离线重试和处理回执；官网反馈查询与身份隔离、源站和访问防护。',
         'source':{'path':'/artifacts/'+source.name,'sha256':digest(source.read_bytes()),'size':source.stat().st_size},
         'files':{name:{'sha256':digest(data),'size':len(data)} for name,data in sorted(files.items())}}
     key=serialization.load_pem_private_key(key_path.read_bytes(),None)

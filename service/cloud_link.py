@@ -21,15 +21,23 @@ class CloudLink:
         headers={'Accept':'application/json'}
         if token:headers['Authorization']='Bearer '+token
         if body is not None:headers['Content-Type']='application/json'
-        request=Request(ORIGIN+path,data=json.dumps(body).encode() if body is not None else None,headers=headers)
+        request=Request(ORIGIN+path,data=json.dumps(body,ensure_ascii=False,separators=(',',':')).encode() if body is not None else None,headers=headers)
         try:
             with build_opener(ProxyHandler({}),NoRedirect()).open(request,timeout=15) as r:
                 data=r.read(2*1024*1024+1)
                 if len(data)>2*1024*1024:raise CloudError('cloud_response_limit',502)
                 return json.loads(data)
         except HTTPError as e:
-            if token and e.code in (401,403):self.invalidate(token)
-            raise CloudError('cloud_request_rejected',e.code) from None
+            if token and e.code==401:self.invalidate(token)
+            code='cloud_request_rejected'
+            try:
+                raw=e.read(4097)
+                value=json.loads(raw) if len(raw)<=4096 else {}
+                candidate=value.get('error')
+                if isinstance(candidate,str) and candidate.replace('_','').isalnum() and len(candidate)<100:code=candidate
+            except (OSError,ValueError):pass
+            finally:e.close()
+            raise CloudError(code,e.code) from None
         except (URLError,OSError,ValueError):raise CloudError('cloud_unavailable',503) from None
     def authenticated(self):
         with self.lock:

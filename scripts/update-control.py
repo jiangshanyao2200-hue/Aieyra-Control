@@ -13,7 +13,7 @@ def hashed(path):return hashlib.sha256(path.read_bytes()).hexdigest() if path.is
 def safe(root,name):
     p=PurePosixPath(name)
     if p.is_absolute() or '\\' in name or ':' in name or any(x in ('','..','.') for x in p.parts):raise ValueError('unsafe_update_path')
-    if p.parts[0] not in ('service','web','desktop','scripts','config','docs','Start-Control.ps1','Start-Control.vbs','README.md','AGENTS.md','.gitignore'):raise ValueError('protected_update_path')
+    if p.parts[0] not in ('service','web','desktop','scripts','config','docs','Start-Control.ps1','Start-Control.vbs','README.md','AGENTS.md','SECURITY.md','.gitignore'):raise ValueError('protected_update_path')
     if any(x in ('node_modules','__pycache__','evidence','.runtime') for x in p.parts) or '.local.' in name or name.endswith('.sqlite'):raise ValueError('protected_update_path')
     if name == 'config/release-baseline.json':raise ValueError('trust_root_requires_separate_rotation')
     candidate=root.joinpath(*p.parts)

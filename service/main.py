@@ -38,10 +38,11 @@ from agent_protocol import openapi as agent_openapi
 from project_memory import ProjectMemory, MemoryError
 from cloud_link import CloudLink, CloudError
 from cloud_session import SessionVault
+from feedback import Feedback, FeedbackError
 from local_hub import create_local_hub
 from paths import shared_directory, configuration_file, initialize as initialize_paths
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 REGISTRY_ACTIONS = frozenset({"project-register", "governance-grant", "host-register", "adapter-register", "seat-create", "seat-update", "seat-control", "operation-receipt"})
 ROOT = Path(__file__).resolve().parent.parent
 ID = re.compile(r"^[A-Za-z0-9_.:-]{1,100}$")
@@ -466,6 +467,7 @@ class Application:
         self.cloud = CloudLink(vault=SessionVault((data_dir.parent if data_dir.name=='shared' else data_dir)/'config'))
         self.store = Store(data_dir / "control.sqlite")
         self.store.recover()
+        self.feedback = Feedback(self)
         self.os_sessions = OSSessions(config, data_dir, ROOT, self.store)
         self.collaboration = Projection(self.store, config, source_provider=self.os_sessions.sources)
         self.product_commands = ProductCommands(self.os_sessions.sources)
@@ -970,6 +972,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.server.app.cloud.status()
         if path == 'cloud/community':
             return self.server.app.cloud.call('/v1/community')
+        if path == 'cloud/feedback':
+            access.require_leader(peer)
+            return self.server.app.feedback.list(peer)
         if path == 'memory':
             project = query.get('project', [peer['project']])[0]
             if project != peer['project']:
@@ -1126,7 +1131,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise Problem("not_found", "页面尚未就绪或不存在。", 404)
             kind = mimetypes.guess_type(str(file))[0] or "application/octet-stream"
             return self.send(200, file.read_bytes(), kind + ("; charset=utf-8" if kind.startswith("text/") or kind == "application/javascript" else ""))
-        except CloudError as error:
+        except (CloudError,FeedbackError) as error:
             self.send(error.status,{'error':error.code,'code':error.code})
         except MemoryError as error:
             self.send(error.status, {'code': error.code, 'error': error.code, 'replay_allowed': False})
@@ -1227,7 +1232,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise Problem("invalid_management_request", "管理请求需包含动作和对象参数。")
                 return self.send(200, {"result": self.server.app.management(action, payload)})
             raise Problem("not_found", "接口不存在。", 404)
-        except CloudError as error:
+        except (CloudError,FeedbackError) as error:
             self.send(error.status,{'error':error.code,'code':error.code})
         except MemoryError as error:
             self.send(error.status, {'code': error.code, 'error': error.code, 'replay_allowed': False})
@@ -1298,6 +1303,12 @@ def main():
     thread = threading.Thread(target=application.run, name="control-sync", daemon=True)
     thread.start()
     threading.Thread(target=application.cloud_monitor, name='control-cloud-opt-in', daemon=True).start()
+    def feedback_monitor():
+        while not application.stop.is_set():
+            try:application.feedback.flush()
+            except Exception:pass  # Retain the durable queue; never log diagnostics.
+            application.stop.wait(10)
+    threading.Thread(target=feedback_monitor, name='control-private-feedback', daemon=True).start()
     threading.Thread(target=application.monitor, name="control-monitor", daemon=True).start()
     threading.Thread(target=application.reconnect_hub, name="control-hub-reconnect", daemon=True).start()
     threading.Thread(target=application.monitor_collaboration, name="control-collaboration", daemon=True).start()

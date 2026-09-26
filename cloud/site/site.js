@@ -19,7 +19,7 @@ $('[data-login]')?.addEventListener('click',()=>login().catch(()=>say('连接未
 if(location.pathname==='/auth/callback'){
  const q=new URLSearchParams(location.search),flow=readSession('control-login');history.replaceState(null,'','/auth/callback');
  if(flow&&q.get('state')===flow.state&&q.get('flow')===flow.flow_id){
-  try{const r=await api('/v1/auth/exchange',{...flow,code:q.get('code')});sessionStorage.removeItem('control-login');sessionStorage.removeItem('control-session');say('已连接。');$('[data-login]').hidden=true;location.replace('/download');}
+  try{const r=await api('/v1/auth/exchange',{...flow,code:q.get('code')});sessionStorage.removeItem('control-login');sessionStorage.removeItem('control-session');say('已连接。');$('[data-login]').hidden=true;const next=sessionStorage.getItem('control-return');sessionStorage.removeItem('control-return');location.replace(next==='/feedback'?next:'/download');}
   catch{say('连接已过期，请重试。');}
  }else say('客户端发起的连接，请返回 Control。');
 }

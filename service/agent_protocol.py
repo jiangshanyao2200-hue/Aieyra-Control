@@ -38,6 +38,10 @@ def openapi(origin='http://127.0.0.1:17910'):
     operation(prefix+'cloud/community','get','Explicitly read the public entertainment feed after login')
     operation(prefix+'cloud/share','post','Publish only explicitly selected public entertainment text', {**request,'session_id':session,'body':{'type':'string','maxLength':1000},'public_consent':{'const':True}})
     operation(prefix+'cloud/check','post','Check a signed official release after login', {'session_id':session})
+    operation(prefix+'cloud/feedback','get','Leader reads private durable feedback queue and official receipts')
+    operation(prefix+'cloud/feedback','post','Leader promptly reports a diagnosed product issue; selected and privacy-reviewed diagnostics only',
+              {**request,'session_id':session,'report':{'type':'object'},'privacy_reviewed':{'const':True}})
+    operation(prefix+'cloud/feedback-cancel','post','Leader cancels feedback that has not been accepted by the website',{'session_id':session,'id':identifier})
     operation(prefix + 'heartbeat', 'post', 'Renew after center revalidation; omitted runtime_state preserves latest state', {**request, 'session_id': session, 'runtime_state': {'enum': ['idle', 'running', 'paused', 'waiting_user']}}, ['request_id', 'session_id'])
     operation(prefix + 'disconnect', 'post', 'Release seat and stop pending deliveries', {**request, 'session_id': session})
     memory_fields = {**request, 'project': identifier, 'version': {'type': 'integer', 'minimum': 0},

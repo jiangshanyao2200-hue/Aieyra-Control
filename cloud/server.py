@@ -1,12 +1,16 @@
 """Control's explicit public community and release service. No project ingestion."""
 from __future__ import annotations
-import base64,hashlib,hmac,json,mimetypes,os,re,secrets,sqlite3,time,ssl,threading
+import base64,hashlib,hmac,ipaddress,json,mimetypes,os,re,secrets,sqlite3,time,ssl,sys,threading
 from contextlib import contextmanager
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs,urlsplit,urlencode
 from urllib.request import Request,build_opener,ProxyHandler,HTTPRedirectHandler
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent/'service'))
+from feedback_store import FeedbackStore
+from feedback_contract import FeedbackError
 
 SITE='https://ctrl.aieyra.cn';CLOUD='https://ctrlupdate.aieyra.cn';API='https://api.aieyra.cn'
 CALLBACKS={SITE+'/auth/callback',CLOUD+'/auth/callback'}
@@ -22,7 +26,7 @@ def check(value,pattern=r'[A-Za-z0-9_-]{32,128}'):
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
 
-class Cloud:
+class Cloud(FeedbackStore):
     def __init__(self,data,identity=None):
         self.data=Path(data);self.data.mkdir(parents=True,exist_ok=True)
         self.identity=identity or self.newapi_identity
@@ -35,6 +39,35 @@ class Cloud:
             CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY,start REAL NOT NULL,count INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS blocked(subject TEXT PRIMARY KEY,reason TEXT NOT NULL);
             ''')
+        self.init_feedback()
+        self.rate_lock=threading.Lock();self.rate_buckets={}
+        self.connection_counts={}
+        self.trusted_proxies={v.strip() for v in os.environ.get('CONTROL_TRUSTED_PROXIES','').split(',') if v.strip()}
+    def ingress_limit(self,key,count,seconds):
+        # Reject abusive traffic before SQLite/auth; bounded memory even across IPs.
+        now=time.monotonic()
+        with self.rate_lock:
+            old=self.rate_buckets.get(key)
+            if old and now-old[0]<seconds:
+                if old[1]>=count:raise Error('rate_limited',429)
+                self.rate_buckets[key]=(old[0],old[1]+1);return
+            if len(self.rate_buckets)>=8192:
+                self.rate_buckets={k:v for k,v in self.rate_buckets.items() if now-v[0]<300}
+                if len(self.rate_buckets)>=8192:raise Error('rate_capacity',503)
+            self.rate_buckets[key]=(now,1)
+    @contextmanager
+    def capacity(self,kind,subject,per_user,total):
+        key=(kind,subject)
+        with self.rate_lock:
+            if self.connection_counts.get(key,0)>=per_user or self.connection_counts.get(kind,0)>=total:raise Error('connection_capacity',429)
+            self.connection_counts[key]=self.connection_counts.get(key,0)+1
+            self.connection_counts[kind]=self.connection_counts.get(kind,0)+1
+        try:yield
+        finally:
+            with self.rate_lock:
+                for k in (key,kind):
+                    self.connection_counts[k]-=1
+                    if not self.connection_counts[k]:del self.connection_counts[k]
     @contextmanager
     def db(self):
         d=sqlite3.connect(self.data/'cloud.sqlite',timeout=8);d.row_factory=sqlite3.Row
@@ -149,11 +182,21 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass  # Never log codes, cookies, tokens or content.
     def setup(self):
         super().setup();self.connection.settimeout(20)
+    def version_string(self):return 'AieyraControl'
+    def visitor(self):
+        peer=self.client_address[0]
+        if peer in self.server.app.trusted_proxies:
+            value=self.headers.get('X-Control-Client-IP','')
+            if not value:return peer  # Old draining proxy workers share a conservative bucket.
+            try:return str(ipaddress.ip_address(value))
+            except ValueError:raise Error('invalid_proxy_identity',400) from None
+        return peer
     def respond(self,status,body=None,headers=None):
         raw=json.dumps(body,ensure_ascii=False).encode() if isinstance(body,(dict,list)) else body or b''
         self.send_response(status)
         defaults={'Content-Type':'application/json; charset=utf-8','Content-Length':str(len(raw)),
           'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
+          'X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()',
           'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://ctrlupdate.aieyra.cn; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}
         for k,v in {**defaults,**(headers or {})}.items():self.send_header(k,v)
         origin=self.headers.get('Origin')
@@ -175,12 +218,16 @@ class Handler(BaseHTTPRequestHandler):
         if value.get('scope')!='browser':return self.respond(200,value)
         cookie=SESSION_COOKIE+'='+value['access_token']+'; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=86400'
         return self.respond(200,{k:v for k,v in value.items() if k!='access_token'},{'Set-Cookie':cookie})
-    def do_OPTIONS(self):self.respond(204,headers={'Access-Control-Allow-Methods':'GET, POST','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Max-Age':'600'})
+    def do_OPTIONS(self):
+        if self.headers.get('Origin') not in (SITE,CLOUD):return self.respond(403,{'error':'origin_denied'})
+        self.respond(204,headers={'Access-Control-Allow-Methods':'GET, POST','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Max-Age':'600'})
     def do_HEAD(self):self.do_GET()
     def do_GET(self):self.run(False)
     def do_POST(self):self.run(True)
     def artifact(self,path):
-        token=self.token();self.server.app.session(token)
+        token=self.token();session=self.server.app.session(token)
+        with self.server.app.capacity('download',session['subject'],3,16):return self.send_artifact(path,token)
+    def send_artifact(self,path,token):
         if not re.fullmatch(r'/artifacts/[A-Za-z0-9_.-]+',path):raise Error('not_found',404)
         release=self.server.app.data/'releases/stable.json'
         if not release.exists():raise Error('not_found',404)
@@ -219,7 +266,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not data:break
                     self.wfile.write(data);remaining-=len(data)
     def release_events(self):
-        token=self.token();self.server.app.session(token)
+        token=self.token();session=self.server.app.session(token)
+        with self.server.app.capacity('stream',session['subject'],2,20):return self.send_events(token)
+    def send_events(self,token):
         if self.command=='HEAD':return self.respond(200,headers={'Content-Type':'text/event-stream'})
         if not self.server.stream_slots.acquire(blocking=False):raise Error('stream_capacity',503)
         try:
@@ -246,10 +295,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise Error('bridge_only',403)
             if self.headers.get('Host','').split(':')[0] not in ('ctrl.aieyra.cn','ctrlupdate.aieyra.cn','127.0.0.1','localhost'):raise Error('invalid_host',421)
             if len(self.path)>4096:raise Error('uri_limit',414)
-            app.limit('ip:'+self.client_address[0],2400,60)
+            visitor=self.visitor()
+            app.ingress_limit('global',6000,60)
+            app.ingress_limit('ip:'+visitor,600,60)
+            if path.startswith('/v1/auth/'):
+                app.ingress_limit('auth:'+visitor,120 if path.endswith('/poll') else 20,60)
+            if path.startswith('/v1/feedback'):
+                app.ingress_limit('feedback:'+visitor,60,60)
             if write:
                 if self.headers.get('Origin') not in (None,SITE,CLOUD):raise Error('origin_denied',403)
-                if self.headers.get('Transfer-Encoding') or self.headers.get_content_type()!='application/json':raise Error('json_required',415)
+                if self.headers.get('Transfer-Encoding') or len(self.headers.get_all('Content-Length',[]))!=1 or self.headers.get_content_type()!='application/json':raise Error('json_required',415)
                 length=int(self.headers.get('Content-Length','0'))
                 if not 0<length<=8192:raise Error('body_limit',413)
                 b=json.loads(self.rfile.read(length))
@@ -258,12 +313,17 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/v1/auth/exchange':return self.login_response(app.exchange(b))
                 if path=='/v1/auth/poll':return self.respond(200,app.poll(b))
                 session=app.session(self.token())
+                if path=='/v1/feedback/channel':return self.respond(200,app.feedback_channel(session,b))
+                if path=='/v1/feedback':return self.respond(200,app.submit_feedback(session,b))
                 if path=='/v1/auth/logout':
                     with app.db() as d:d.execute('UPDATE sessions SET revoked=1 WHERE hash=?',(session['hash'],))
                     return self.respond(200,{'logged_out':True},{'Set-Cookie':SESSION_COOKIE+'=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0'})
                 if path=='/v1/community':return self.respond(200,app.post(session,b))
                 raise Error('not_found',404)
-            if path=='/healthz':return self.respond(200,{'service':'aieyra-control-cloud','version':'0.6.0'})
+            if path=='/healthz':return self.respond(200,{'service':'aieyra-control-cloud','version':'0.6.1'})
+            if path=='/v1/feedback' or path.startswith('/v1/feedback/'):
+                session=app.session(self.token())
+                return self.respond(200,app.list_feedback(session,path[13:] if path.startswith('/v1/feedback/') else None))
             if path.startswith('/artifacts/'):return self.artifact(path)
             if path=='/aieyra/control/authorize':
                 bridge=os.environ.get('CONTROL_BRIDGE_SECRET','')
@@ -280,12 +340,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not target.exists():return self.respond(200,{'available':False})
                 return self.respond(200,target.read_bytes())
             pages={'/':'index.html','/share':'share.html','/download':'download.html','/auth/callback':'callback.html',
-                   '/style.css':'style.css','/site.js':'site.js'}
+                   '/feedback':'feedback.html','/feedback.js':'feedback.js','/style.css':'style.css','/site.js':'site.js'}
             if path in pages:
                 file=Path(__file__).parent/'site'/pages[path]
                 return self.respond(200,file.read_bytes(),{'Content-Type':mimetypes.guess_type(str(file))[0]+('; charset=utf-8' if file.suffix!='.png' else '')})
             raise Error('not_found',404)
-        except Error as e:self.close_connection=write;self.respond(e.status,{'error':e.code})
+        except (Error,FeedbackError) as e:
+            self.close_connection=write
+            self.respond(e.status,{'error':e.code},{'Retry-After':'60'} if e.status==429 else None)
         except (ValueError,TypeError,KeyError):self.close_connection=True;self.respond(400,{'error':'invalid_request'})
         except (BrokenPipeError,ConnectionResetError):self.close_connection=True
         except Exception:self.close_connection=True;self.respond(503,{'error':'service_unavailable'})
@@ -301,7 +363,13 @@ class BoundedServer(ThreadingHTTPServer):
         try:super().process_request(request,address)
         except Exception:self.slots.release();raise
     def process_request_thread(self,*args):
-        try:super().process_request_thread(*args)
+        try:
+            if getattr(self,'tls_context',None):
+                request,address=args;request.settimeout(5)
+                try:request=self.tls_context.wrap_socket(request,server_side=True)
+                except (OSError,ssl.SSLError):request.close();return
+                args=(request,address)
+            super().process_request_thread(*args)
         finally:self.slots.release()
 
 if __name__=='__main__':
@@ -311,6 +379,6 @@ if __name__=='__main__':
         secure=BoundedServer(('0.0.0.0',8791),Handler);secure.daemon_threads=True;secure.app=server.app
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.minimum_version=ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(os.environ['CONTROL_TLS_CERT'],os.environ['CONTROL_TLS_KEY'])
-        secure.socket=context.wrap_socket(secure.socket,server_side=True)
+        secure.tls_context=context
         threading.Thread(target=secure.serve_forever,daemon=True).start()
     server.serve_forever()
