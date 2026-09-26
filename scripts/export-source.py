@@ -25,6 +25,8 @@ def sources(include_development=False):
     files['config/release-public.pem']=(ROOT/'config/release-public.pem').read_bytes()
     if include_development and (ROOT/'config/release-baseline.json').exists():files['config/release-baseline.json']=(ROOT/'config/release-baseline.json').read_bytes()
     if include_development:files['.gitignore']=b'data/\nruntime/\n.tools/\n.release/\nbuild/\n__pycache__/\n*.pyc\nnode_modules/\n*.sqlite*\nconfig/*.local.json\n*.pending\n'
+    # Signed baselines describe bytes; Git must preserve the exported line endings.
+    if include_development:files['.gitattributes']=b'* -text\n'
     for name,raw in files.items():
         if SENSITIVE.search(raw):raise ValueError('sensitive_content_in_'+name)
     return files

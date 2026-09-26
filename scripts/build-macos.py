@@ -17,7 +17,13 @@ def build(output,arch,baseline=None):
     if stage.exists():raise ValueError('output_exists')
     stage.mkdir();files=mod.sources()
     for name,data in files.items():p=stage/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
-    if baseline:shutil.copy2(baseline,stage/'config/release-baseline.json')
+    if baseline:
+        expected=json.loads(baseline.read_text(encoding='utf-8'))['manifest']['files']
+        if set(files)!=set(expected):raise ValueError('baseline_file_set_mismatch')
+        for name,raw in files.items():
+            if len(raw)!=expected[name]['size'] or hashlib.sha256(raw).hexdigest()!=expected[name]['sha256']:
+                raise ValueError('baseline_source_mismatch_'+name)
+        shutil.copy2(baseline,stage/'config/release-baseline.json')
     downloads=output/'downloads';downloads.mkdir();runtime=RUNTIMES[arch]
     electron=downloads/'electron.zip';fetch(f'https://github.com/electron/electron/releases/download/v{ELECTRON}/electron-v{ELECTRON}-darwin-{arch}.zip',electron,runtime['electron'])
     subprocess.run(['ditto','-x','-k',str(electron),str(downloads/'electron')],check=True)
