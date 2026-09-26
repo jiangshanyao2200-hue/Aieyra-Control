@@ -1,6 +1,6 @@
 """Opt-in cloud boundary. No calls before explicit sign-in, no project payloads."""
 from __future__ import annotations
-import base64,hashlib,json,secrets,threading,time
+import base64,hashlib,json,secrets,socket,threading,time
 from urllib.request import Request,build_opener,ProxyHandler,HTTPRedirectHandler
 from urllib.error import HTTPError,URLError
 from release_verify import verify
@@ -28,16 +28,32 @@ class CloudLink:
                 if len(data)>2*1024*1024:raise CloudError('cloud_response_limit',502)
                 return json.loads(data)
         except HTTPError as e:
-            if token and e.code in (401,403):self.invalidate()
+            if token and e.code in (401,403):self.invalidate(token)
             raise CloudError('cloud_request_rejected',e.code) from None
         except (URLError,OSError,ValueError):raise CloudError('cloud_unavailable',503) from None
     def authenticated(self):
-        if not self.session or self.session['expires_at']<=time.time():
-            self.invalidate();raise CloudError('cloud_login_required',401)
-        return self.session
-    def invalidate(self):
-        self.session=None;self.release=None;self.last_check=0
-        if self.vault:self.vault.clear()
+        with self.lock:
+            if not self.session or self.session['expires_at']<=time.time():
+                self.invalidate();raise CloudError('cloud_login_required',401)
+            return self.session
+    @staticmethod
+    def close_stream(stream):
+        if stream is None:return
+        # Interrupt a blocked urllib read before closing its buffered reader.
+        raw=getattr(getattr(stream,'fp',None),'raw',None)
+        sock=getattr(raw,'_sock',None)
+        if sock:
+            try:sock.shutdown(socket.SHUT_RDWR)
+            except OSError:pass
+        try:stream.close()
+        except OSError:pass
+    def invalidate(self,token=None):
+        with self.lock:
+            if token is not None and (not self.session or self.session.get('access_token')!=token):return
+            self.session=None;self.release=None;self.last_check=0;self.next_stream=0
+            stream=self.stream;self.stream=None
+            if self.vault:self.vault.clear()
+        self.close_stream(stream)
     def status(self):
         with self.lock:
             active=bool(self.session and self.session['expires_at']>time.time())
@@ -59,17 +75,18 @@ class CloudLink:
             value=self.transport('/v1/auth/poll',{k:v for k,v in self.flow.items() if k!='expires'})
             if value.get('pending'):return {'pending':True}
             if value.get('scope')!='desktop' or not isinstance(value.get('access_token'),str) or value.get('expires_at',0)<=time.time():raise CloudError('invalid_cloud_session',502)
-            self.session=value;self.flow=None;self.release=None;self.last_check=0
+            stream=self.stream;self.stream=None
+            self.session=value;self.flow=None;self.release=None;self.last_check=0;self.next_stream=0;self.error=None
             if self.vault:self.vault.save(value)
-            return self.status()
+        self.close_stream(stream)
+        return self.status()
     def logout(self):
         with self.lock:
             token=self.session.get('access_token') if self.session else None
-            self.session=None;self.flow=None;self.release=None;self.last_check=0;self.error=None
+            self.session=None;self.flow=None;self.release=None;self.last_check=0;self.error=None;self.next_stream=0
+            stream=self.stream;self.stream=None
             if self.vault:self.vault.clear()
-            if self.stream:
-                try:self.stream.close()
-                except OSError:pass
+        self.close_stream(stream)
         # Local disable takes effect even if revocation is temporarily unreachable.
         if token:
             try:self.transport('/v1/auth/logout',{},token)
@@ -90,25 +107,34 @@ class CloudLink:
             finally:self.last_check=time.time()
             return self.release
     def background_check(self):
-        if not self.status()['enabled']:return
+        # Login may change between status, connection establishment and each event.
+        with self.lock:
+            try:token=self.authenticated()['access_token']
+            except CloudError:return
+            if time.time()<self.next_stream:return
         if self.custom_transport:
             if time.time()-self.last_check>=900:
                 try:self.check()
                 except CloudError:pass
             return
-        if time.time()<self.next_stream:return
-        token=self.authenticated()['access_token']
         request=Request(ORIGIN+'/v1/releases/events',headers={'Accept':'text/event-stream','Authorization':'Bearer '+token})
+        response=None
         try:
             with build_opener(ProxyHandler({}),NoRedirect()).open(request,timeout=65) as response:
-                self.stream=response;event=''
-                while self.session and self.session.get('access_token')==token:
+                with self.lock:
+                    if not self.session or self.session.get('access_token')!=token:return
+                    self.stream=response
+                event=''
+                while True:
+                    with self.lock:
+                        if not self.session or self.session.get('access_token')!=token:break
+                        if self.session['expires_at']<=time.time():self.invalidate(token);break
                     line=response.readline(2*1024*1024+1)
                     if not line:break
                     if len(line)>2*1024*1024:raise CloudError('cloud_response_limit',502)
                     if line.startswith(b'event: '):event=line[7:].strip().decode()
                     elif line.startswith(b'data: '):
-                        if event=='revoked':self.invalidate();return
+                        if event=='revoked':self.invalidate(token);return
                         if event!='release':continue
                         envelope=json.loads(line[6:])
                         if envelope.get('available') is not False:verify(envelope)
@@ -116,9 +142,14 @@ class CloudLink:
                             if self.session and self.session.get('access_token')==token:
                                 self.release=envelope;self.last_check=time.time();self.error=None
         except HTTPError as e:
-            if e.code in (401,403):self.invalidate()
-            else:self.error='cloud_unavailable'
-            self.next_stream=time.time()+30
+            with self.lock:
+                if self.session and self.session.get('access_token')==token:
+                    if e.code in (401,403):self.invalidate(token)
+                    else:self.error='cloud_unavailable';self.next_stream=time.time()+30
         except (OSError,URLError,ValueError,CloudError):
-            self.error='cloud_unavailable';self.next_stream=time.time()+30
-        finally:self.stream=None
+            with self.lock:
+                if self.session and self.session.get('access_token')==token:
+                    self.error='cloud_unavailable';self.next_stream=time.time()+30
+        finally:
+            with self.lock:
+                if self.stream is response:self.stream=None
