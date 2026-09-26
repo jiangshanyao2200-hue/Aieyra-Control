@@ -1,0 +1,17 @@
+{
+  "name": "aieyra-control-desktop",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Aieyra Control desktop lifecycle host",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/supervisor.test.cjs ../tests/desktop-notifications/*.test.cjs",
+    "test:electron": "node test/electron-smoke.cjs",
+    "test:notifications:native": "node ../tests/desktop-notifications/native-smoke.cjs",
+    "test:notifications:live": "node ../tests/desktop-notifications/live-readonly.cjs",
+    "test:os-managed": "node ../tests/desktop-notifications/os-managed-candidate.cjs"
+  },
+  "engines": { "node": ">=22.12" },
+  "devDependencies": { "electron": "42.6.1", "playwright": "1.58.2" }
+}

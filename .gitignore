@@ -1,0 +1,11 @@
+data/
+runtime/
+.tools/
+.release/
+build/
+__pycache__/
+*.pyc
+node_modules/
+*.sqlite*
+config/*.local.json
+*.pending

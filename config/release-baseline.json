@@ -1,0 +1,380 @@
+{
+  "payload": "eyJzY2hlbWEiOjEsInByb2R1Y3QiOiJhaWV5cmEtY29udHJvbCIsInZlcnNpb24iOiIwLjYuMCIsInNlcXVlbmNlIjoyMDI2MDkyNjA2LCJjcmVhdGVkX2F0IjoxNzkwNDM2NDYyLCJtaW5pbXVtX3VwZGF0ZXIiOjEsIm5vdGVzIjoi6L2v5Lu255uu5b2V5YaF6YWN572u5LiO5YWx5Lqr5pWw5o2u5bqT44CB6LSm5Y+355m75b2V44CB5Y+X6ZmQ5LiL6L295ZKM5pu05paw5o6o6YCB77yMV2luZG93cyBFWEUg5LiOIG1hY09TIOWOn+eUn+WPkeihjOOAgiIsInNvdXJjZSI6eyJwYXRoIjoiL2FydGlmYWN0cy9haWV5cmEtY29udHJvbC0wLjYuMC1zb3VyY2UuemlwIiwic2hhMjU2IjoiYzE3N2I1OWJiMzU3MzM5NTZlOGFhYmE4NjgwYzEzYmU2NDlhOTA5OGE0ZmNkNWQyNjc4ZmQ3YjE5ZmE3YjQxMSIsInNpemUiOjQ4ODY5MX0sImZpbGVzIjp7Ii5naXRpZ25vcmUiOnsic2hhMjU2IjoiNjY3OWIwYzVkZWIxZTY1YzAxZWZmMjNhYTBlNTc4N2IzMTNiZTY0ODJkOGNmN2U4NjU0ODQ2ZmZkMTRkMTJiZCIsInNpemUiOjEwNn0sIkFHRU5UUy5tZCI6eyJzaGEyNTYiOiI2OWExODkwZDA2OTdkZjhiMjhjMmVmZDBmNWY1ZTE4YWYyZTM3YjQ5OTg2YWZjNDBjY2MzNWUxYjUyMDRlYmQzIiwic2l6ZSI6OTkxfSwiUkVBRE1FLm1kIjp7InNoYTI1NiI6IjYyMDYwYzM5MjBiODI5Yjg4ZjRkZjRlMmE1ZmY5M2Y1NTU4MDdkNjUxZGNjYTFjYjFmOGI5ODVlOTIyNTNhZWYiLCJzaXplIjo0NTg1fSwiU3RhcnQtQ29udHJvbC5wczEiOnsic2hhMjU2IjoiZDFhN2Y0OGE1OTMzOWU5MWMwYjY4ZjkxODBjZTYyZGNkMDBlZjc5NzQ4OTJkZDQ5M2ZiODU2YjcyN2JjY2QyMSIsInNpemUiOjg4Nn0sIlN0YXJ0LUNvbnRyb2wudmJzIjp7InNoYTI1NiI6IjRlOTIzYmYzMjk3ZWZhYzYxZDE2N2FhMzczODQ2ZjA2MmYyMmMyMmUzYjdhNDJlYThjYTI1MDlmMDE3NzM0ZTMiLCJzaXplIjo4ODB9LCJjb25maWcvcmVsZWFzZS1wdWJsaWMucGVtIjp7InNoYTI1NiI6ImY4ZjRhN2ZjZGIyYzg4OWM0NWE2YzFjZTBkODY4MzQ3OWMwZTYxNWUwOTk4ODNkY2JkNjA5OWQxNWQyNjEyNzYiLCJzaXplIjoxMTN9LCJkZXNrdG9wL2Fzc2V0cy9pY29uLmljbyI6eyJzaGEyNTYiOiIwY2ExMzk5YzFkODhkMWNhYWY4ZDAyY2I2YzZhNmJlZmRmYTE0OTBmNzI4OWYzYzE0NmZjNGM1NTFkNjJmM2MzIiwic2l6ZSI6MjM3N30sImRlc2t0b3AvYXNzZXRzL2ljb24ucG5nIjp7InNoYTI1NiI6ImY2M2I5MzFjYTIxMjU1NTMyMDU5YWY5ZTI2YmNjNDQ0ZWQ3MzhiZjc3MGFiMDAzZWQ0YjA1NTNhYjZhODBjYmEiLCJzaXplIjoxODl9LCJkZXNrdG9wL2h1bWFuLW5vdGlmaWNhdGlvbi1ob3N0LmNqcyI6eyJzaGEyNTYiOiJkYjJiODk0ZjYwMmU2YjY3YzkzMmEyNzIxZWYyZTU5MjI0MWFlZGMzYjg2MTRmMzNmM2ZhNDdkNjQ4ODZmNzUwIiwic2l6ZSI6MzQ5MX0sImRlc2t0b3AvaHVtYW4tbm90aWZpY2F0aW9ucy5janMiOnsic2hhMjU2IjoiNzBhMDliNmIzZGVhOGVjOTcyZjkwNGEzOTNmMDE5MTFiMjZjMzNkYTQ3NGU1ZDI1N2M5YTE2N2ZjNmZjMGI0ZiIsInNpemUiOjk0MTd9LCJkZXNrdG9wL2h1bWFuLXJlcXVlc3QtZmVlZC5janMiOnsic2hhMjU2IjoiODdlZDk5MTMwNTI1MzNjNzg5N2E5NTZmOTVkYzJmNTllNjU3YjQ0OGY5OGQ4ODhiYTcxMjMwMjRlYTFiYWQwZCIsInNpemUiOjU2OTZ9LCJkZXNrdG9wL21haW4uY2pzIjp7InNoYTI1NiI6ImQwMTc1ODVkNGZjYTgwZWRkMmVlYWEzYTRjNGMxNmUxZjdmNWQ1NTdjYWJlMDdkMzc5NDI4ZDA1OWUzMTM0ZmMiLCJzaXplIjoxMzc4N30sImRlc2t0b3Avb3Mtb3duZXItcGlwZS5janMiOnsic2hhMjU2IjoiNDc1NmE4YzUyZDJjM2Q5YWM5NGU5MTU2YWM3NDFlOTIxY2U3N2EwNGNiMjFhOTA1ZDM2MTkwNWNiOWM2N2VjYiIsInNpemUiOjM3NDZ9LCJkZXNrdG9wL3BhY2thZ2UuanNvbiI6eyJzaGEyNTYiOiJhNGExZTQ3NWUwMGQ4MTQ0OWM2YzNhMDllZmYwMjg4NjhjZDIzZDFiMWFjOWRjMTE1ODZmYzA0ODZkODY0Mzk4Iiwic2l6ZSI6NzQxfSwiZGVza3RvcC9wYXRocy5janMiOnsic2hhMjU2IjoiOWFmMWRmZGUwYTE2NTc0NDM4OTEzOWZlNWU1MTNjMDkyYWQ3ZmJhZWIzZTg3ZTM4ZTEzNDkzOTUwYjBiNjBlNyIsInNpemUiOjExMzJ9LCJkZXNrdG9wL3ByZWxvYWQuY2pzIjp7InNoYTI1NiI6ImUxNTNmYmY1YzJhYzY5ZDk3MjQ0MmZlMDg2NDBlZmY5YTUwMDRjMmIwYmI4MjkzYmM2MTYzNDJjODBmZTQ0NjkiLCJzaXplIjoxMjI2fSwiZGVza3RvcC9zdXBlcnZpc29yLmNqcyI6eyJzaGEyNTYiOiIzMmEyMGU5MmI0YTY1YTMyM2UxZDE3NDExNGFlMTNjOTk0YzkwMGNiMGQzZjVhOTg4MjUzNDM3MTlkN2E4YzI4Iiwic2l6ZSI6NjgyNX0sImRlc2t0b3AvdGVzdC1vdXRwdXQvZWxlY3Ryb24tc21va2UuanNvbiI6eyJzaGEyNTYiOiJhZjYxNWM0ZGFkYTEwZGNmM2I2ZTgyMjhiMTFiNDk2MmI3ZjU4YWVlZTRlMTdmYTc5ZGM0ZDI5Y2UwNGIwYzk3Iiwic2l6ZSI6MjIzfSwiZGVza3RvcC90ZXN0LW91dHB1dC9oaWRkZW4tc2hlbGwucG5nIjp7InNoYTI1NiI6IjYzNzk0MzMwNGEwY2I3OGU3OTU3OTQ4N2ZiNTYxY2Q4ZGQxYmU3ZDBiNjJhNWY5MzhjMGMzY2EzM2ZjYjJjM2YiLCJzaXplIjoxMjUyMH0sImRlc2t0b3AvdGVzdC1vdXRwdXQvbGl2ZS1jb250cm9sLnBuZyI6eyJzaGEyNTYiOiJjZjEwNjJmMDFiNmMxN2UyMDQ2MTRkYWU3NDZjYmNkODRjYWRiM2Y4YmI4NjZlOWMwNzVhNjE3OTdlOTc0Nzc5Iiwic2l6ZSI6MTY1NjE4fSwiZGVza3RvcC90ZXN0LW91dHB1dC9saXZlLXVpLXNtb2tlLmpzb24iOnsic2hhMjU2IjoiNjM4NTc3NzYxZTRlNjcyZjM4MGM2YThjZTZhYzgwODBhNzU0MjJjZjI0ZGIwY2I4MDAwOTBlMzY1MmYwYjA0NSIsInNpemUiOjE4M30sImRlc2t0b3Avd2FpdGluZy5jc3MiOnsic2hhMjU2IjoiYjA1MTkzNjE0NDc3Y2NjOTAyMWU5NWRiYjk5NTcyOGNjNDU4Yjc3ODc3NzYzOGVmYzIyNTUxNzI4MjY2YmFhZSIsInNpemUiOjk4N30sImRlc2t0b3Avd2FpdGluZy5odG1sIjp7InNoYTI1NiI6IjM3ODBiNDY5MWVmOGNhOTBjMjU4ZTBkMTQ3NWJlODE2OTU2NDZkMGZlZmEwYWRmODFjMGRkZTJiZjA4NjcxNWYiLCJzaXplIjo5MTl9LCJzY3JpcHRzL2FnZW50LWNsaWVudC5weSI6eyJzaGEyNTYiOiJiNmU4ODE1NGJjYjZiODBiNTZlZDY0OGFjMDExYmY2NmZjNzI0NmNiMjZhY2VlYmQ2ODQ0YzAxYjRhZDk0ZTkxIiwic2l6ZSI6MTg0MDR9LCJzY3JpcHRzL2Rvd25sb2FkLXVwZGF0ZS5weSI6eyJzaGEyNTYiOiI3M2Q5YjBhZTJlNmU1MWYxZWI1NjE3MGM0M2ZjNTRhZGJjMjA3Yjk3MTczYzU1MmIwZmM5MTg5NDMwZWMwMTM5Iiwic2l6ZSI6MTk4NH0sInNjcmlwdHMvZW5yb2xsLWFnZW50LnB5Ijp7InNoYTI1NiI6IjAwMzBlOTFhODE4NzFjODFlZDEwMDU5OTQwNWQ4MTQ2NjA1MDllNGQyODJkMjhkYjVmYzRlYTJjNWI2MDJkNmYiLCJzaXplIjoyMjQwfSwic2NyaXB0cy9taWdyYXRlLWRhdGEucHkiOnsic2hhMjU2IjoiZmI5OTAzYzMxOTc4NjFkNzBmMDI1YTdlYWJjZTYzMmE4MWE1NGQyN2JhNTAyNTYzODFkMDBjOWZiNWM3MmJjOSIsInNpemUiOjIzOTh9LCJzY3JpcHRzL3N0YXJ0LWRlc2t0b3AucHMxIjp7InNoYTI1NiI6ImJlNWExMGY0NzAzMjU3NDUwMzhhNTFjNTEyM2FiNzIyYWFlMDU3ZmFmY2JhZTRhNGMzYzY4MDc2MWVkMjdlNmIiLCJzaXplIjoyMDM5fSwic2NyaXB0cy91cGRhdGUtY29udHJvbC5weSI6eyJzaGEyNTYiOiJkZmJiODQ1YTBhOThmNzZjNTFkMTc0YmJhMjIwMzcwMTJmMGU5MWQyOWE3MjYxMWU2ZmJhODkzMGQ3ZTE3ODVkIiwic2l6ZSI6OTA5Mn0sInNjcmlwdHMvdmVyaWZ5LXJlbGVhc2UuY2pzIjp7InNoYTI1NiI6ImZiMThjZWY2NjU4MTE5MTE0ZDM0MWJmNzQwMWYyN2Y2ODZlMWVkMGUzMTVjNjA3YmZkOGY4ZmQ0MWMxMDU0MzkiLCJzaXplIjoxMDIxfSwic2VydmljZS9hZ2VudF9hY2Nlc3MucHkiOnsic2hhMjU2IjoiNmM5MzUzNjViMWUwMDU5NDM4MzM1NDVjZWNkYmIyNzI2ODkyMWMyN2NlYWU5NzYzOGYzNDhiZmMyNGE1NDUzMSIsInNpemUiOjM5ODc2fSwic2VydmljZS9hZ2VudF9wcm90b2NvbC5weSI6eyJzaGEyNTYiOiI4ODg5MjRlYTlkYzNhY2I2NTg2OTFmNWZiOTM5MTUyZjEzNDQ2M2MxZGE5ZjE4NzYyZDQ2YzkxODcyZDA1NTlhIiwic2l6ZSI6ODIyNH0sInNlcnZpY2UvY2F0YWxvZy5weSI6eyJzaGEyNTYiOiJmNDNjMTdjZDY2MGI2MDkzYmFmZTkwZDhmMzk2Mzg1NDIwYjVkY2VlYmVjYzQ4ODA1MzBlZTgwYWZiMzczZmRlIiwic2l6ZSI6NTMwM30sInNlcnZpY2UvY2xvdWRfbGluay5weSI6eyJzaGEyNTYiOiI3NjRhNWM1ZTkzMmQ1NzViMjlmN2U2Njg0YTZkMWMxNzFkMGZiZWIwNjlmNzEwOWM2YzNiODUzYjI2M2UzNjIwIiwic2l6ZSI6NzM3NH0sInNlcnZpY2UvY2xvdWRfc2Vzc2lvbi5weSI6eyJzaGEyNTYiOiJhYzBmY2I5ZTUyYzQ3YzAwYTU3NDJiMmRmYjYzMjZmZGM2MTFkY2RjYjg3ZGQ5NjE3M2QyNWZjMzVmMzJjODQzIiwic2l6ZSI6Mjg4Nn0sInNlcnZpY2UvY29sbGFib3JhdGlvbi5weSI6eyJzaGEyNTYiOiJiMWY4ZDcyZWRkYTExYzVhY2ZmNjFiNGFmOTIzYmRhZmU0YmJkZjdlM2NiMDNjMjkwOGQ2ZmZjMjk2ODcyNzMyIiwic2l6ZSI6MTU1NzR9LCJzZXJ2aWNlL2Nvb3JkaW5hdGlvbl9jb3JlL1VQU1RSRUFNLmpzb24iOnsic2hhMjU2IjoiNGMxNzM4M2FlZGQxOWE2ZGM5ZDk2MmZiMDA0M2JiMGUyYjFmOTBjYTVhMzkyODhhY2E5ZjZlNGI0ZmVhODVjZCIsInNpemUiOjE5MjJ9LCJzZXJ2aWNlL2Nvb3JkaW5hdGlvbl9jb3JlL19faW5pdF9fLnB5Ijp7InNoYTI1NiI6IjNhNTJmOTcwY2YyNzUwNzM0Mzc3Yjg5NWJkMDg3ODEwNzE2YzFkYzAzOWIzZDE1MWQwZTRjYTZiYTkyYjhlNzAiLCJzaXplIjo4MX0sInNlcnZpY2UvY29vcmRpbmF0aW9uX2NvcmUvY29sbGFib3JhdGlvbi5weSI6eyJzaGEyNTYiOiIzY2VlNzdkODgwMTQwOTM3ZGEwNmVlOTNjMzEzZjBiYmRkYjJmMmEyM2U0ZGFjYzg1ZGNkYzc2M2M0ODMwMzc4Iiwic2l6ZSI6MjgyNTl9LCJzZXJ2aWNlL2Nvb3JkaW5hdGlvbl9jb3JlL2NvcmUucHkiOnsic2hhMjU2IjoiNGM5YWI3Njk5Y2FjYTU1MDZlNTEzY2E2YTU5ZjM5M2NmNzYwNmMxZDY0NWQyZDdmOTMzZGExNzU2YWY0MTgxZCIsInNpemUiOjExNTJ9LCJzZXJ2aWNlL2Nvb3JkaW5hdGlvbl9jb3JlL2h1Yi5weSI6eyJzaGEyNTYiOiI4ZjA0NTMzZmI4MzRkNGY5MDQwMzZiMzc1ZTE4NmQ1OTViYTVlYTQ4Njg0ZjJkNTFmOWRhNjY1OTUwZTk4YmQ3Iiwic2l6ZSI6MTk3ODZ9LCJzZXJ2aWNlL2Nvb3JkaW5hdGlvbl9jb3JlL2ludGFrZS5weSI6eyJzaGEyNTYiOiJkZmRkYWRlNmFmYmNhOWI0NDRiZWQ1NjVkZThhYjM2YTYzNjAxYTc1ODk5ZWMxYmVmMDE0M2E4MjdkMmZjYjJlIiwic2l6ZSI6MjM1NDZ9LCJzZXJ2aWNlL2Nvb3JkaW5hdGlvbl9jb3JlL2pvYnMucHkiOnsic2hhMjU2IjoiM2I3NTZmMDRiNWFhYmRhOWNkM2M2YzRiN2JkOTQ1NWY0MjZjNTVjZDJkMmRlNTkwOGM0NzY1MjJlNTZjYzI1ZSIsInNpemUiOjI0NjY1fSwic2VydmljZS9jb29yZGluYXRpb25fY29yZS9saWJyYXJ5LnB5Ijp7InNoYTI1NiI6IjFjZjFiZTdlYWJkZmE1ODk4MWM2NDlhYjVjY2Y4NWEyMDc0MDYxNzczOTAwYmVkY2I1ZmJiYmY1NDQ4MmQ0OGMiLCJzaXplIjo4NTM3fSwic2VydmljZS9jb29yZGluYXRpb25fY29yZS9tb2JpbGUucHkiOnsic2hhMjU2IjoiMGNlZTY4ZjYzNTc0N2ExMjBkNzY0MTFhMDY2NWQ2ZDZmMzFjYmNhNzllZGEzNTQxNjM2YzBhZWQzZTEyNjk3NiIsInNpemUiOjQzODEwfSwic2VydmljZS9jb29yZGluYXRpb25fY29yZS9yZWdpc3RyeS5weSI6eyJzaGEyNTYiOiI0YmZmYTkxNzRmMGIzMDlmMTMwN2ZkZTlkOGEwY2ZkOGNiNzY2MDQzZjUzN2FhZDc0OTI1YzQzOWJkMmMxOTllIiwic2l6ZSI6MjU5ODN9LCJzZXJ2aWNlL2Rpc2NvdmVyeS5weSI6eyJzaGEyNTYiOiJiZDY5M2Y4Yjk4ZWQxMzMyZGEzZGUzNGU3YmZmMjVmOTJiMWFlZDhkZTA3NTJjNzQxNTQ1MTRjNGE2ZGYxMTlhIiwic2l6ZSI6MjkwNn0sInNlcnZpY2UvZXZpZGVuY2UucHkiOnsic2hhMjU2IjoiMmZkZTJlZmI3OTc3ZTJkNDhhNjY3ZjliMjY2OTMxNWFkMzBjZDIzMjIwNTgzNmY0MDIyM2Y4NmI2ODkwYmYyYSIsInNpemUiOjI0NjF9LCJzZXJ2aWNlL2h1bWFuX3JlcXVlc3RzLnB5Ijp7InNoYTI1NiI6ImRjYzgyZmFmMTZiZWIwN2NhMzMxZTg0ZDA3MzIxOGFjNzRmYzdkYzU5MWZkOTMzNGYyNWQzMGI0OWFkZTg3MWMiLCJzaXplIjoxODI3OX0sInNlcnZpY2UvbG9jYWxfaHViLnB5Ijp7InNoYTI1NiI6IjNmZmMyZjFhNWY0M2IzZDQ4MGMxMDM5N2IyYTZlOTBhNjkyZDk1MWI3MDllOGY0YWVlM2JkOWJiOGU3NDZkZmUiLCJzaXplIjozNzQ0fSwic2VydmljZS9tYWluLnB5Ijp7InNoYTI1NiI6ImY4MWYwOTQ2M2QxZmE5ODFiZGNmNjM5OWQ2MDgwNzRiYmE1Y2VjY2NmNTRmNjkwY2NjNWEzNTBhNmNjMTdhNmMiLCJzaXplIjo3NzM2Mn0sInNlcnZpY2UvbW9uaXRvci5weSI6eyJzaGEyNTYiOiI0MTExYzUwNjk0MDc2ZGE1ZGIyNDc5OWMxOTZmYzkyNzIzNjM4YzY2ZGZiZGUyNDgzMmQ4Mzc5YjkxNzViOTcxIiwic2l6ZSI6Mjk4Nn0sInNlcnZpY2Uvb3Nfc2Vzc2lvbnMucHkiOnsic2hhMjU2IjoiMDU3OTI1NzY0NGY1M2M5MTc2ZDdmZWViNTVjOGI4YjVkMjBjMDc2NTk0NzAyMWNiNTk5Mzc1ODZmNzBmZGNmYiIsInNpemUiOjU0Njh9LCJzZXJ2aWNlL3BhdGhzLnB5Ijp7InNoYTI1NiI6IjNmODQxNzRlMTNmYmVkODQzYzc5Y2EyNTljNDBiNDU1NTdkNDJmODY2Mzc5ZTI3MzMwODdjY2I4ZjVlZjJkNzEiLCJzaXplIjoxMjgyfSwic2VydmljZS9wcm9kdWN0X2NvbW1hbmRzLnB5Ijp7InNoYTI1NiI6ImNiZjIzOGQ1MTY2MTlmNGUwMTcyMTE2NDE1YTJhZWM2MTU1ZGUwYTUwNTZlNzYyZjg5N2E3NWQ1NDBkODRmNjMiLCJzaXplIjozNjkyfSwic2VydmljZS9wcm9kdWN0X2pvYnMucHkiOnsic2hhMjU2IjoiMDkyM2MxM2M1YmM0NTUzODIzOWJlYjU5MmU1YWNlOThhMTM0ZDRjM2UyN2U3NDk4MjA1OWVjOWE1ZGZhOTIxMiIsInNpemUiOjQxOTF9LCJzZXJ2aWNlL3Byb2plY3RfbWVtb3J5LnB5Ijp7InNoYTI1NiI6IjNjYmU2NmQ2ZTNjNmY3NTk2Mzc3M2YwMTU0YTc4NzMwYTE2NjE0OTgwZGJlMzI1OGQ0ZjgwOTVhMGVkMTUwM2EiLCJzaXplIjo3Njc5fSwic2VydmljZS9yZWxlYXNlX3ZlcmlmeS5weSI6eyJzaGEyNTYiOiI3OTA0MzU0NjAyMzM5OTYwYjliZWQ4NTEyNjFlODU0NThiMmUyYzJjMjQxYjc4NWZlNTNlMDk1YWMwMmVmMDYyIiwic2l6ZSI6ODgwfSwic2VydmljZS9yZXF1ZXN0X2ludGFrZS5weSI6eyJzaGEyNTYiOiI1MzMxYWQyZTFhOWU0NWEyZmRiMDA1ZGYwMGJiMjg1ZWZjNTViOWUyZjhjYjNhZmYyNGViOTBjZGYyYzAzN2E5Iiwic2l6ZSI6Mzk5N30sInNlcnZpY2UvcmVxdWlyZW1lbnRfZGVsaXZlcnkucHkiOnsic2hhMjU2IjoiOGRjOGNhZGMxYjhmYjZjYjc1ZjZkYzU5MDdkNjYzNDU1YmNhZjVjMDRlN2ZjOWRmNzA3MTllYjkxYjI1ODZkZSIsInNpemUiOjE1MzMwfSwic2VydmljZS93YXRjaGRvZy5weSI6eyJzaGEyNTYiOiI5ZWQyMGJmYTgzMzg2Y2ZiYWE3Mzk1NzA0YmJiNWU4Njc2ZDUzN2JmMTMwNjg3MDFlNWExNTZjMjUwYWU5Y2I0Iiwic2l6ZSI6MTU0OTJ9LCJ3ZWIvYWNjb3VudC5qcyI6eyJzaGEyNTYiOiJiNTZjYzI5YmE2YjhkN2JjMDg2OWRkN2MzMzM1NjdmZDA1OTA3NWVhN2Y4YjViZjc0MjRkZGM5MTFhMWIyMTNiIiwic2l6ZSI6MjUzN30sIndlYi9hZ2VudC1hY2Nlc3MuanMiOnsic2hhMjU2IjoiYjFhOGFhMmM1NGI5M2UzNjM2MTllZDFmNTFlMzBkZWY2ZjA4NzYyZjBmNjA1NWE1NGYzMWZiOTYwNjJiOTQ4YSIsInNpemUiOjg1NjJ9LCJ3ZWIvYXBwLmpzIjp7InNoYTI1NiI6IjU5MDMxNmE0ZTBlZWI5YmRlY2U4ZWVhZDVmM2Y4YTdkOTkxZGI0Y2I5ZjJlYTQyN2U2YjU5YzZjZTNlYzA2Y2EiLCJzaXplIjo1NDgzMn0sIndlYi9jaGF0LW1lbnRpb25zLmpzIjp7InNoYTI1NiI6IjU2YzQyYWJhYjZjODJiMWQwMWI5MDk5MGJjNGU0YjExOWZiMzdhMTIxOGNlODQ0ZjE5NDVjOGU4Nzk3MzU3ZTAiLCJzaXplIjoxOTA5fSwid2ViL2Nsb3VkLXNldHRpbmdzLmpzIjp7InNoYTI1NiI6IjY2ZTk1NDFjYzUxMjdlZjA3NzM5MzQ5ODczY2FjYzY1YjU5ZmY2NWIxOTEzNzRjNTU3ZWUxMjljZmYxNTdhNTkiLCJzaXplIjoyNDkwfSwid2ViL2NvbW1hbmQtY2VudGVyLmpzIjp7InNoYTI1NiI6Ijk4MTA0YWEzYTdjYzcwNDRjMjEzYWM2NDk4MDVhNjA5YjI3OGVkMDI4NjczMGNlMDMyZGRlYmM5M2IxYTgyMGIiLCJzaXplIjo1MTg4Nn0sIndlYi9jb21tYW5kLXNjZW5lLmpzIjp7InNoYTI1NiI6ImExY2U2OTg0MmE2MmY1MTYxYzI5MjgyNjc5OGEzNzMwN2ZmNTQ3NzJhOGY4NDU4ODk4YTMxYjFiMTVjYmMxYmUiLCJzaXplIjoyMDExNH0sIndlYi9kb20uanMiOnsic2hhMjU2IjoiYTAwODAzNGFlYzc1OTQ5YTlmZjZkZjNiYjdlNTQ3MDViYzQ1YWJlN2IwZmI2NmEyNGE2OGNlOTk0M2JmZGRhNSIsInNpemUiOjI2MDN9LCJ3ZWIvZm9jdXMuanMiOnsic2hhMjU2IjoiMzQ3ZTkzMTcyZWU3NWFhODcxZmU0MDRhYmU4Y2E4MDE5ODZmMDM2M2FiZjczMjEwYTIyMDdhZWQ4YTFhNzU0MiIsInNpemUiOjExNjl9LCJ3ZWIvaHVtYW4tY2VudGVyLmpzIjp7InNoYTI1NiI6IjU0ZGUyMDA5Mjg0NzRlYjBhOTVjMzQwZTM4ZTdhY2NmYzQ3MzgxYzM2Y2FiOTJjNGQ3ZGI4OTExODMxYzhiZDgiLCJzaXplIjoyMzUyNn0sIndlYi9pMThuLmpzIjp7InNoYTI1NiI6IjYwNWI5MmYwYTRhYjJjZDMzODdjM2E4OTQ1MTU3OTQzNTE2ZWNlYzQwY2FhOGM3Y2VmYzE2MGVjZDI0NjU0NjUiLCJzaXplIjoyOTE0N30sIndlYi9pbmRleC5odG1sIjp7InNoYTI1NiI6IjU2MzFjNjhkYWVhNTAwNzBkNzkyMGQ4M2ExYTJhZWY3ZTg5ZmE1YzZiNjIzMDc0ZTY5ZjM2YWU5ZDNjYjAzZDgiLCJzaXplIjoxMDg1fSwid2ViL21hcmsuc3ZnIjp7InNoYTI1NiI6ImJiZWU4ZDZlYjQ1ZDlmOGQ0ZWMxNWVlNjExZTVmYzAzMDhjNzExNTlmMmFmMTMzYTlmNjc3MWZmNTg2NDMzYTQiLCJzaXplIjozMDB9LCJ3ZWIvbW9kZWwuanMiOnsic2hhMjU2IjoiOWZhM2EyNjFkNjYyMTUxY2Q1NTE1NTY5OTQ0NzgyYjAzNDQ0NTkwNTczYTI1M2Q1YTNhYzgwZjVmNDgyNTk5YSIsInNpemUiOjEwNTk4fSwid2ViL29ic2VydmVyLW1vZGVsLmpzIjp7InNoYTI1NiI6ImRlNGM4MDdhYTdhOTE0ZTc1NGM3YjgwYmE5YTU2MDZlYWY4NGE0ZmU2NmMwYTg5YzQzYjJhNzExNTc3MWM1ZTYiLCJzaXplIjo0NTc5fSwid2ViL29ic2VydmVyLmNzcyI6eyJzaGEyNTYiOiI3OThmZGEwN2ZjY2M1ZmIwNGRhNzJlMzMxZTU3OWI5NDdmN2I3OGM2MGU5YTdiYzlkMjBjMDJhNDYxYjNjZDViIiwic2l6ZSI6MTM1MTF9LCJ3ZWIvb2JzZXJ2ZXIuanMiOnsic2hhMjU2IjoiNjZmMzcyMmNkMTJlMmQyYTIyOGNkYTQ5OGMxYzU5ODdhNzVlZTY3M2NmZTU1MjgwNzUxODA3ODBiOGUwNzRmMiIsInNpemUiOjQ0ODM1fSwid2ViL29mZmljZS1ob21lLW1vZGVsLmpzIjp7InNoYTI1NiI6IjlmMzY5MTRmMWJlMzIwYzk1MGM0MzY2YzA1MTAxYzcwOTY4NzRhZWY5MTk0MTYzZjY3MTYwMDI3ZTllMjU2MDAiLCJzaXplIjoxNzg2fSwid2ViL29mZmljZS1ob21lLmNzcyI6eyJzaGEyNTYiOiJlNmFkZmRjYzQzMjFhNzcxYzQxNzcyZWU3ZmMzOWE2Y2I1ODBmOWEyMTNmOWE0MDFiOGUwMzIyYzZmOWI1NmZkIiwic2l6ZSI6ODI3N30sIndlYi9vZmZpY2UtaG9tZS5qcyI6eyJzaGEyNTYiOiI1Yzc3MDUxZmM2MTYyOTljODUxMDBlZTczMDdiMzc4MTZkMzZiZmI3MGUwYTUzZDI5YzMzZmQ3YmRiYWYyZDE5Iiwic2l6ZSI6MTk3ODJ9LCJ3ZWIvcHJvamVjdC1tZW1vcnkuanMiOnsic2hhMjU2IjoiNTk5YTZjNWJjYWVjOTQyMGQ3ODljN2Q5ZjdkM2MwYTk4MWM0YTczODZkN2YxMmQzNTUwMzc3YTAwNDE5NTZkNSIsInNpemUiOjU0ODJ9LCJ3ZWIvcmVmaW5lbWVudHMuY3NzIjp7InNoYTI1NiI6IjRhOWMyZmRlYTdmYzljZmE4YmJjZTAyMjRmN2Y2M2EyYmYwYmQzOWY2OGUyMjIyY2Q0NWFlNTIwNzVhMDZmNDIiLCJzaXplIjoyMDg4NH0sIndlYi9yZXF1ZXN0LWRhc2hib2FyZC5qcyI6eyJzaGEyNTYiOiIyYTdkZGJjNGQ2Mjg5OGM5NzY3Njk1MGU4NjAyNGJhOGY1NjVlNjU1NTk0MjA0YzM0YzMyZmU4OTJjZjQ4MjgxIiwic2l6ZSI6MTQzMzZ9LCJ3ZWIvcmVxdWVzdC1pbnRha2UuanMiOnsic2hhMjU2IjoiMWQ1NWM1NDc0N2Q1M2UzZWNlMmVhNzMwYzdkM2UwNTAxODViOWU2OTljMDQ4YTBkMmFlNjk2ZWZhY2QzYTJiNCIsInNpemUiOjE2MDY4fSwid2ViL3NjZW5lLXNpZ25hbHMuanMiOnsic2hhMjU2IjoiMGY0MjhmNmYzNjk1ZTMxOTYyMjE0ZGMwOWFlYTgwMjNjYTUxYmE3Y2RjOGM4NWVlOTY0MDE5YjJhOGYzNjU2MyIsInNpemUiOjQ4NTR9LCJ3ZWIvc2hhcmVkLXNwYWNlLmpzIjp7InNoYTI1NiI6ImMwNGY2ODQ4ZDdkYjYxZGY1NDkyOTcxOGMyZWE4N2FkZjY0MGJmNjM0MDI2ZTlhMWJjMWU5M2Q0M2FiNDBmMjkiLCJzaXplIjo4Mzg3fSwid2ViL3NwYXRpYWwtb2ZmaWNlLmNzcyI6eyJzaGEyNTYiOiI3Y2ZjNmJjYjNhMWM5NGU1ZDI0NDJlOGI1ZjA3YTAwZmQ0MGQ5Y2Q0YWM1OTZiMWY4MjUxMzNiYzExMTgwMmNkIiwic2l6ZSI6NTM1MX0sIndlYi9zcGF0aWFsLW9mZmljZS5qcyI6eyJzaGEyNTYiOiJkYjMyNzU3YWI2MWRjZDgwOTQ5MWMxMWQzMjFjYzQ1YjVhOWRlOTljNDExODVjYTNjNjBjOTA4ODgzMzg3NTZjIiwic2l6ZSI6MTkyNTN9LCJ3ZWIvc3R5bGVzLmNzcyI6eyJzaGEyNTYiOiIyNTc0Njc3NjlkZTdmNTI4ZDg2YjNjZDc5NmQ4ODdiMGZmNzg2NGIzOThmMDIxMzAyY2ZlMzQ4OWIxNjI4ZjMyIiwic2l6ZSI6MTE1MzA4fX19",
+  "signature": "JVbJ7Li8kjw0JYJLcaUjKVNqbtzJJQdK4T0pdYyXJrJLBsvfrB9Z82OADnA84znO6CwDWxYu0x9gn4qHkYMlBg==",
+  "manifest": {
+    "schema": 1,
+    "product": "aieyra-control",
+    "version": "0.6.0",
+    "sequence": 2026092606,
+    "created_at": 1790436462,
+    "minimum_updater": 1,
+    "notes": "软件目录内配置与共享数据库、账号登录、受限下载和更新推送，Windows EXE 与 macOS 原生发行。",
+    "source": {
+      "path": "/artifacts/aieyra-control-0.6.0-source.zip",
+      "sha256": "c177b59bb35733956e8aaba8680c13be649a9098a4fcd5d2678fd7b19fa7b411",
+      "size": 488691
+    },
+    "files": {
+      ".gitignore": {
+        "sha256": "6679b0c5deb1e65c01eff23aa0e5787b313be6482d8cf7e8654846ffd14d12bd",
+        "size": 106
+      },
+      "AGENTS.md": {
+        "sha256": "69a1890d0697df8b28c2efd0f5f5e18af2e37b49986afc40ccc35e1b5204ebd3",
+        "size": 991
+      },
+      "README.md": {
+        "sha256": "62060c3920b829b88f4df4e2a5ff93f555807d651dcca1cb1f8b985e92253aef",
+        "size": 4585
+      },
+      "Start-Control.ps1": {
+        "sha256": "d1a7f48a59339e91c0b68f9180ce62dcd00ef7974892dd493fb856b727bccd21",
+        "size": 886
+      },
+      "Start-Control.vbs": {
+        "sha256": "4e923bf3297efac61d167aa373846f062f22c22e3b7a42ea8ca2509f017734e3",
+        "size": 880
+      },
+      "config/release-public.pem": {
+        "sha256": "f8f4a7fcdb2c889c45a6c1ce0d8683479c0e615e099883dcbd6099d15d261276",
+        "size": 113
+      },
+      "desktop/assets/icon.ico": {
+        "sha256": "0ca1399c1d88d1caaf8d02cb6c6a6befdfa1490f7289f3c146fc4c551d62f3c3",
+        "size": 2377
+      },
+      "desktop/assets/icon.png": {
+        "sha256": "f63b931ca21255532059af9e26bcc444ed738bf770ab003ed4b0553ab6a80cba",
+        "size": 189
+      },
+      "desktop/human-notification-host.cjs": {
+        "sha256": "db2b894f602e6b67c932a2721ef2e592241aedc3b8614f33f3fa47d64886f750",
+        "size": 3491
+      },
+      "desktop/human-notifications.cjs": {
+        "sha256": "70a09b6b3dea8ec972f904a393f01911b26c33da474e5d257c9a167fc6fc0b4f",
+        "size": 9417
+      },
+      "desktop/human-request-feed.cjs": {
+        "sha256": "87ed9913052533c7897a956f95dc2f59e657b448f98d888ba7123024ea1bad0d",
+        "size": 5696
+      },
+      "desktop/main.cjs": {
+        "sha256": "d017585d4fca80edd2eeaa3a4c4c16e1f7f5d557cabe07d379428d059e3134fc",
+        "size": 13787
+      },
+      "desktop/os-owner-pipe.cjs": {
+        "sha256": "4756a8c52d2c3d9ac94e9156ac741e921ce77a04cb21a905d361905cb9c67ecb",
+        "size": 3746
+      },
+      "desktop/package.json": {
+        "sha256": "a4a1e475e00d81449c6c3a09eff028868cd23d1b1ac9dc11586fc0486d864398",
+        "size": 741
+      },
+      "desktop/paths.cjs": {
+        "sha256": "9af1dfde0a165744389139fe5e513c092ad7fbaeb3e87e38e13493950b0b60e7",
+        "size": 1132
+      },
+      "desktop/preload.cjs": {
+        "sha256": "e153fbf5c2ac69d972442fe08640eff9a5004c2b0bb8293bc616342c80fe4469",
+        "size": 1226
+      },
+      "desktop/supervisor.cjs": {
+        "sha256": "32a20e92b4a65a323e1d174114ae13c994c900cb0d3f5a98825343719d7a8c28",
+        "size": 6825
+      },
+      "desktop/test-output/electron-smoke.json": {
+        "sha256": "af615c4dada10dcf3b6e8228b11b4962b7f58aeee4e17fa79dc4d29ce04b0c97",
+        "size": 223
+      },
+      "desktop/test-output/hidden-shell.png": {
+        "sha256": "637943304a0cb78e79579487fb561cd8dd1be7d0b62a5f938c0c3ca33fcb2c3f",
+        "size": 12520
+      },
+      "desktop/test-output/live-control.png": {
+        "sha256": "cf1062f01b6c17e204614dae746cbcd84cadb3f8bb866e9c075a61797e974779",
+        "size": 165618
+      },
+      "desktop/test-output/live-ui-smoke.json": {
+        "sha256": "638577761e4e672f380c6a8ce6ac8080a75422cf24db0cb800090e3652f0b045",
+        "size": 183
+      },
+      "desktop/waiting.css": {
+        "sha256": "b05193614477ccc9021e95dbb995728cc458b778777638efc22551728266baae",
+        "size": 987
+      },
+      "desktop/waiting.html": {
+        "sha256": "3780b4691ef8ca90c258e0d1475be81695646d0fefa0adf81c0dde2bf086715f",
+        "size": 919
+      },
+      "scripts/agent-client.py": {
+        "sha256": "b6e88154bcb6b80b56ed648ac011bf66fc7246cb26aceebd6844c01b4ad94e91",
+        "size": 18404
+      },
+      "scripts/download-update.py": {
+        "sha256": "73d9b0ae2e6e51f1eb56170c43fc54adbc207b97173c552b0fc9189430ec0139",
+        "size": 1984
+      },
+      "scripts/enroll-agent.py": {
+        "sha256": "0030e91a81871c81ed100599405d814660509e4d282d28db5fc4ea2c5b602d6f",
+        "size": 2240
+      },
+      "scripts/migrate-data.py": {
+        "sha256": "fb9903c3197861d70f025a7eabce632a81a54d27ba50256381d00c9fb5c72bc9",
+        "size": 2398
+      },
+      "scripts/start-desktop.ps1": {
+        "sha256": "be5a10f470325745038a51c5123ab722aae057fafcbae4a4c3c680761ed27e6b",
+        "size": 2039
+      },
+      "scripts/update-control.py": {
+        "sha256": "dfbb845a0a98f76c51d174bba22037012f0e91d29a72611e6fba8930d7e1785d",
+        "size": 9092
+      },
+      "scripts/verify-release.cjs": {
+        "sha256": "fb18cef6658119114d341bf7401f27f686e1ed0e315c607bfd8f8fd41c105439",
+        "size": 1021
+      },
+      "service/agent_access.py": {
+        "sha256": "6c935365b1e005943833545cecdbb27268921c27ceae97638f348bfc24a54531",
+        "size": 39876
+      },
+      "service/agent_protocol.py": {
+        "sha256": "888924ea9dc3acb658691f5fb939152f134463c1da9f18762d46c91872d0559a",
+        "size": 8224
+      },
+      "service/catalog.py": {
+        "sha256": "f43c17cd660b6093bafe90d8f396385420b5dceebecc4880530ee80afb373fde",
+        "size": 5303
+      },
+      "service/cloud_link.py": {
+        "sha256": "764a5c5e932d575b29f7e6684a6d1c171d0fbeb069f7109c6c3b853b263e3620",
+        "size": 7374
+      },
+      "service/cloud_session.py": {
+        "sha256": "ac0fcb9e52c47c00a5742b2dfb6326fdc611dcdcb87dd96173d25fc35f32c843",
+        "size": 2886
+      },
+      "service/collaboration.py": {
+        "sha256": "b1f8d72edda11c5acff61b4af923bdafe4bbdf7e3cb03c2908d6ffc296872732",
+        "size": 15574
+      },
+      "service/coordination_core/UPSTREAM.json": {
+        "sha256": "4c17383aedd19a6dc9d962fb0043bb0e2b1f90ca5a39288aca9f6e4b4fea85cd",
+        "size": 1922
+      },
+      "service/coordination_core/__init__.py": {
+        "sha256": "3a52f970cf2750734377b895bd087810716c1dc039b3d151d0e4ca6ba92b8e70",
+        "size": 81
+      },
+      "service/coordination_core/collaboration.py": {
+        "sha256": "3cee77d880140937da06ee93c313f0bbddb2f2a23e4dacc85dcdc763c4830378",
+        "size": 28259
+      },
+      "service/coordination_core/core.py": {
+        "sha256": "4c9ab7699caca5506e513ca6a59f393cf7606c1d645d2d7f933da1756af4181d",
+        "size": 1152
+      },
+      "service/coordination_core/hub.py": {
+        "sha256": "8f04533fb834d4f904036b375e186d595ba5ea48684f2d51f9da665950e98bd7",
+        "size": 19786
+      },
+      "service/coordination_core/intake.py": {
+        "sha256": "dfddade6afbca9b444bed565de8ab36a63601a75899ec1bef0143a827d2fcb2e",
+        "size": 23546
+      },
+      "service/coordination_core/jobs.py": {
+        "sha256": "3b756f04b5aabda9cd3c6c4b7bd9455f426c55cd2d2de5908c476522e56cc25e",
+        "size": 24665
+      },
+      "service/coordination_core/library.py": {
+        "sha256": "1cf1be7eabdfa58981c649ab5ccf85a2074061773900bedcb5fbbbf54482d48c",
+        "size": 8537
+      },
+      "service/coordination_core/mobile.py": {
+        "sha256": "0cee68f635747a120d76411a0665d6d6f31cbca79eda3541636c0aed3e126976",
+        "size": 43810
+      },
+      "service/coordination_core/registry.py": {
+        "sha256": "4bffa9174f0b309f1307fde9d8a0cfd8cb766043f537aad74925c439bd2c199e",
+        "size": 25983
+      },
+      "service/discovery.py": {
+        "sha256": "bd693f8b98ed1332da3de34e7bff25f92b1aed8de0752c74154514c4a6df119a",
+        "size": 2906
+      },
+      "service/evidence.py": {
+        "sha256": "2fde2efb7977e2d48a667f9b2669315ad30cd232205836f40223f86b6890bf2a",
+        "size": 2461
+      },
+      "service/human_requests.py": {
+        "sha256": "dcc82faf16beb07ca331e84d073218ac74fc7dc591fd9334f25d30b49ade871c",
+        "size": 18279
+      },
+      "service/local_hub.py": {
+        "sha256": "3ffc2f1a5f43b3d480c10397b2a6e90a692d951b709e8f4aee3bd9bb8e746dfe",
+        "size": 3744
+      },
+      "service/main.py": {
+        "sha256": "f81f09463d1fa981bdcf6399d608074bba5cecccf54f690ccc5a350a6cc17a6c",
+        "size": 77362
+      },
+      "service/monitor.py": {
+        "sha256": "4111c50694076da5db24799c196fc92723638c66dfbde24832d8379b9175b971",
+        "size": 2986
+      },
+      "service/os_sessions.py": {
+        "sha256": "0579257644f53c9176d7feeb55c8b8b5d20c0765947021cb59937586f70fdcfb",
+        "size": 5468
+      },
+      "service/paths.py": {
+        "sha256": "3f84174e13fbed843c79ca259c40b45557d42f866379e2733087ccb8f5ef2d71",
+        "size": 1282
+      },
+      "service/product_commands.py": {
+        "sha256": "cbf238d516619f4e0172116415a2aec6155de0a5056e762f897a75d540d84f63",
+        "size": 3692
+      },
+      "service/product_jobs.py": {
+        "sha256": "0923c13c5bc45538239beb592e5ace98a134d4c3e27e74982059ec9a5dfa9212",
+        "size": 4191
+      },
+      "service/project_memory.py": {
+        "sha256": "3cbe66d6e3c6f75963773f0154a78730a16614980dbe3258d4f8095a0ed1503a",
+        "size": 7679
+      },
+      "service/release_verify.py": {
+        "sha256": "7904354602339960b9bed851261e85458b2e2c2c241b785fe53e095ac02ef062",
+        "size": 880
+      },
+      "service/request_intake.py": {
+        "sha256": "5331ad2e1a9e45a2fdb005df00bb285efc55b9e2f8cb3aff24eb90cdf2c037a9",
+        "size": 3997
+      },
+      "service/requirement_delivery.py": {
+        "sha256": "8dc8cadc1b8fb6cb75f6dc5907d663455bcaf5c04e7fc9df70719eb91b2586de",
+        "size": 15330
+      },
+      "service/watchdog.py": {
+        "sha256": "9ed20bfa83386cfbaa7395704bbb5e8676d537bf13068701e5a156c250ae9cb4",
+        "size": 15492
+      },
+      "web/account.js": {
+        "sha256": "b56cc29ba6b8d7bc0869dd7c333567fd059075ea7f8b5bf7424ddc911a1b213b",
+        "size": 2537
+      },
+      "web/agent-access.js": {
+        "sha256": "b1a8aa2c54b93e363619ed1f51e30def6f08762f0f6055a54f31fb96062b948a",
+        "size": 8562
+      },
+      "web/app.js": {
+        "sha256": "590316a4e0eeb9bdece8eead5f3f8a7d991db4cb9f2ea427e6b59c6ce3ec06ca",
+        "size": 54832
+      },
+      "web/chat-mentions.js": {
+        "sha256": "56c42abab6c82b1d01b90990bc4e4b119fb37a1218ce844f1945c8e8797357e0",
+        "size": 1909
+      },
+      "web/cloud-settings.js": {
+        "sha256": "66e9541cc5127ef07739349873cacc65b59ff65b191374c557ee129cff157a59",
+        "size": 2490
+      },
+      "web/command-center.js": {
+        "sha256": "98104aa3a7cc7044c213ac649805a609b278ed0286730ce032ddebc93b1a820b",
+        "size": 51886
+      },
+      "web/command-scene.js": {
+        "sha256": "a1ce69842a62f5161c292826798a37307ff54772a8f8458898a31b1b15cbc1be",
+        "size": 20114
+      },
+      "web/dom.js": {
+        "sha256": "a008034aec75949a9ff6df3bb7e54705bc45abe7b0fb66a24a68ce9943bfdda5",
+        "size": 2603
+      },
+      "web/focus.js": {
+        "sha256": "347e93172ee75aa871fe404abe8ca801986f0363abf73210a2207aed8a1a7542",
+        "size": 1169
+      },
+      "web/human-center.js": {
+        "sha256": "54de200928474eb0a95c340e38e7accfc47381c36cab92c4d7db8911831c8bd8",
+        "size": 23526
+      },
+      "web/i18n.js": {
+        "sha256": "605b92f0a4ab2cd3387c3a8945157943516ecec40caa8c7cefc160ecd2465465",
+        "size": 29147
+      },
+      "web/index.html": {
+        "sha256": "5631c68daea50070d7920d83a1a2aef7e89fa5c6b623074e69f36ae9d3cb03d8",
+        "size": 1085
+      },
+      "web/mark.svg": {
+        "sha256": "bbee8d6eb45d9f8d4ec15ee611e5fc0308c71159f2af133a9f6771ff586433a4",
+        "size": 300
+      },
+      "web/model.js": {
+        "sha256": "9fa3a261d662151cd5515569944782b03444590573a253d5a3ac80f5f482599a",
+        "size": 10598
+      },
+      "web/observer-model.js": {
+        "sha256": "de4c807aa7a914e754c7b80ba9a5606eaf84a4fe66c0a89c43b2a7115771c5e6",
+        "size": 4579
+      },
+      "web/observer.css": {
+        "sha256": "798fda07fccc5fb04da72e331e579b947f7b78c60e9a7bc9d20c02a461b3cd5b",
+        "size": 13511
+      },
+      "web/observer.js": {
+        "sha256": "66f3722cd12e2d2a228cda498c1c5987a75ee673cfe5528075180780b8e074f2",
+        "size": 44835
+      },
+      "web/office-home-model.js": {
+        "sha256": "9f36914f1be320c950c4366c05101c7096874aef9194163f67160027e9e25600",
+        "size": 1786
+      },
+      "web/office-home.css": {
+        "sha256": "e6adfdcc4321a771c41772ee7fc39a6cb580f9a213f9a401b8e0322c6f9b56fd",
+        "size": 8277
+      },
+      "web/office-home.js": {
+        "sha256": "5c77051fc616299c85100ee7307b37816d36bfb70e0a53d29c33fd7bdbaf2d19",
+        "size": 19782
+      },
+      "web/project-memory.js": {
+        "sha256": "599a6c5bcaec9420d789c7d9f7d3c0a981c4a7386d7f12d3550377a0041956d5",
+        "size": 5482
+      },
+      "web/refinements.css": {
+        "sha256": "4a9c2fdea7fc9cfa8bbce0224f7f63a2bf0bd39f68e2222cd45ae52075a06f42",
+        "size": 20884
+      },
+      "web/request-dashboard.js": {
+        "sha256": "2a7ddbc4d62898c97676950e86024ba8f565e655594204c34c32fe892cf48281",
+        "size": 14336
+      },
+      "web/request-intake.js": {
+        "sha256": "1d55c54747d53e3ece2ea730c7d3e050185b9e699c048a0d2ae696efacd3a2b4",
+        "size": 16068
+      },
+      "web/scene-signals.js": {
+        "sha256": "0f428f6f3695e31962214dc09aea8023ca51ba7cdc8c85ee964019b2a8f36563",
+        "size": 4854
+      },
+      "web/shared-space.js": {
+        "sha256": "c04f6848d7db61df54929718c2ea87adf640bf634026e9a1bc1e93d43ab40f29",
+        "size": 8387
+      },
+      "web/spatial-office.css": {
+        "sha256": "7cfc6bcb3a1c94e5d2442e8b5f07a00fd40d9cd4ac596b1f825133bc111802cd",
+        "size": 5351
+      },
+      "web/spatial-office.js": {
+        "sha256": "db32757ab61dcd809491c11d321cc45b5a9de99c41185ca3c60c90888338756c",
+        "size": 19253
+      },
+      "web/styles.css": {
+        "sha256": "257467769de7f528d86b3cd796d887b0ff7864b398f021302cfe3489b1628f32",
+        "size": 115308
+      }
+    }
+  }
+}

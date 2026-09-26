@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Exercise a packaged service and native host without displaying a window."""
+import argparse,json,os,socket,subprocess,tempfile,time,urllib.request
+from pathlib import Path
+def smoke(root,mac=False):
+    with tempfile.TemporaryDirectory(prefix='control-package-') as temporary:
+        temporary=Path(temporary)
+        with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+        python=root/('runtime/python/bin/python3' if mac else 'runtime/python/python.exe')
+        executable=root/('Aieyra Control.app/Contents/MacOS/Electron' if mac else 'runtime/electron/electron.exe')
+        env={**os.environ,'AIEYRA_CONTROL_HOME':str(temporary),'ELECTRON_RUN_AS_NODE':'1'}
+        probe=subprocess.run([str(executable),'-e','process.stdout.write(JSON.stringify({version:process.versions.electron,platform:process.platform}))'],env=env,capture_output=True,text=True,timeout=20,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if probe.returncode:raise RuntimeError('packaged_electron_node_failed')
+        print('Electron runtime '+probe.stdout,flush=True)
+        env.pop('ELECTRON_RUN_AS_NODE');env['PYTHONUTF8']='1'
+        env['AIEYRA_CONTROL_NODE']=str(executable)
+        log=temporary/'service.log'
+        with log.open('w') as f:
+            process=subprocess.Popen([str(python),str(root/'service/main.py'),'--port',str(port),'--data-dir',str(temporary/'data/shared'),'--config',str(temporary/'data/config/control.json')],env=env,stdout=f,stderr=f,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            try:
+                for _ in range(50):
+                    if process.poll() is not None:raise RuntimeError('packaged_service_failed: '+log.read_text()[-2000:])
+                    try:
+                        value=json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=1))
+                        if value.get('version')!='0.6.0':raise RuntimeError('wrong_version')
+                        break
+                    except (OSError,ValueError):time.sleep(.2)
+                else:raise RuntimeError('service_start_timeout')
+                for route in ('/api/snapshot','/api/registry','/api/cloud'):
+                    with urllib.request.urlopen(f'http://127.0.0.1:{port}'+route,timeout=5) as r:json.load(r)
+                if not (temporary/'data/shared/office.sqlite').exists():raise RuntimeError('shared_data_missing')
+                print('PASS packaged Python, SQLite, read APIs and portable storage',flush=True)
+            finally:process.terminate();process.wait(timeout=15)
+        if mac:
+            # App bootstrap resolves the external portable source tree correctly.
+            host=subprocess.Popen([str(executable),'--hidden','--port='+str(port),'--user-data-dir='+str(temporary/'host'),'--service-data-dir='+str(temporary/'host-shared'),'--config='+str(temporary/'data/config/control.json')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(50):
+                    if host.poll() is not None:raise RuntimeError('native_host_exited')
+                    try:json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=1));break
+                    except OSError:time.sleep(.2)
+                else:raise RuntimeError('native_host_start_failed')
+                print('PASS native macOS app bootstrap and service lifecycle',flush=True)
+            finally:host.terminate();host.wait(timeout=15)
+if __name__=='__main__':
+    p=argparse.ArgumentParser();p.add_argument('--root',type=Path,required=True);p.add_argument('--mac',action='store_true');a=p.parse_args();smoke(a.root.resolve(),a.mac)

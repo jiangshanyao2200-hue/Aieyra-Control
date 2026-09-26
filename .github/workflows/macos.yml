@@ -1,0 +1,29 @@
+name: macOS packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify native app
+        run: python3 scripts/build-macos.py --arch ${{ matrix.arch }} --output build/macos-${{ matrix.arch }} --baseline config/release-baseline.json
+      - uses: actions/upload-artifact@v4
+        if: github.event.repository.private
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            build/macos-${{ matrix.arch }}/*.zip
+            build/macos-${{ matrix.arch }}/build-receipt.json
+          retention-days: 2

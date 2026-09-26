@@ -1,0 +1,39 @@
+{
+  "source": "Aieyra \u534f\u4f5c\u4e2d\u5fc3/service",
+  "version": "0.5.5",
+  "adaptation": "Relative package imports; installation-specific projects supplied by Control. No remote service fork.",
+  "files": {
+    "core.py": {
+      "source_sha256": "efdd5a572504b62a7852a1bdeb3c0e294c6e87bf4a09df9353408e4e78969e7c",
+      "adapted_sha256": "efdd5a572504b62a7852a1bdeb3c0e294c6e87bf4a09df9353408e4e78969e7c"
+    },
+    "hub.py": {
+      "source_sha256": "d1495ceb1c627d4c517c60f7fae6844b0407df6724c03ac598ef81ce78fa0ca4",
+      "adapted_sha256": "824640a1f5b73b0a703eb2f10726f536cb89d1a1f1a79ec881dbac34c72f0ed5"
+    },
+    "registry.py": {
+      "source_sha256": "af973b45c8aac703114eeae78e169b79d4e04eb70f6b23032dbee130b45bb09f",
+      "adapted_sha256": "2edef47967a4aa9abedc6af3725523825c03e35fbb2e93e682ef279312a96b94"
+    },
+    "mobile.py": {
+      "source_sha256": "c694d2cfc33c5e445e1f7c9744300f7a2dc568381403759f765a11d597a1a251",
+      "adapted_sha256": "0be5c4d904b33072d70efe4513ce4f82a7908c779b2b7378820d9ccb1a7c2d3e"
+    },
+    "jobs.py": {
+      "source_sha256": "ebc41301d6f64e42fb58b41fa0d73fdcb308825c1bd570702c58b6ab97e277f3",
+      "adapted_sha256": "c0caaa068433fe8989125df34410db997ed8082aa83a9002f3eac52333b418a2"
+    },
+    "collaboration.py": {
+      "source_sha256": "e4e13b14b0d88c8191a3e8f3163ccd887f5d06224d8d75d784d914319fe5f58d",
+      "adapted_sha256": "1239cb52464d4eae24e6cfefc12cd515eaf459d67c11e3bd868d350edf0f5430"
+    },
+    "library.py": {
+      "source_sha256": "b1f7f542139b0cae2e827d32cbf2c166a0ecead6ef2f4e0d7b178aa12e1916bc",
+      "adapted_sha256": "c671a7a0eb3044c211bb1c29a33214d4ac9e8456ba453d8b03b708c7e06f09be"
+    },
+    "intake.py": {
+      "source_sha256": "478e2b9e1575408b1b68fc955af217363a57403a3265d834ae57e0679da704f8",
+      "adapted_sha256": "6bf75a45f0df14f7ef55034aa9201ac136d29b6b222a9aafd35048fba29119f5"
+    }
+  }
+}
