@@ -33,14 +33,16 @@ def smoke(root,mac=False):
             finally:process.terminate();process.wait(timeout=15)
         if mac:
             # App bootstrap resolves the external portable source tree correctly.
-            host=subprocess.Popen([str(executable),'--hidden','--port='+str(port),'--user-data-dir='+str(temporary/'host'),'--service-data-dir='+str(temporary/'host-shared'),'--config='+str(temporary/'data/config/control.json')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            host_log=(temporary/'host.log').open('w')
+            env['AIEYRA_CONTROL_PACKAGE_TEST']='1';env['AIEYRA_CONTROL_PLATFORM_TEST']='1'
+            host=subprocess.Popen([str(executable),'--hidden','--port='+str(port),'--user-data-dir='+str(temporary/'host'),'--service-data-dir='+str(temporary/'host-shared'),'--config='+str(temporary/'data/config/control.json')],env=env,stdout=host_log,stderr=host_log)
             try:
-                for _ in range(50):
-                    if host.poll() is not None:raise RuntimeError('native_host_exited')
+                for _ in range(100):
+                    if host.poll() is not None:raise RuntimeError('native_host_exited: '+(temporary/'host.log').read_text()[-6000:])
                     try:json.load(urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=1));break
                     except OSError:time.sleep(.2)
-                else:raise RuntimeError('native_host_start_failed')
+                else:raise RuntimeError('native_host_start_failed: '+(temporary/'host.log').read_text()[-6000:])
                 print('PASS native macOS app bootstrap and service lifecycle',flush=True)
-            finally:host.terminate();host.wait(timeout=15)
+            finally:host.terminate();host.wait(timeout=15);host_log.close()
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--root',type=Path,required=True);p.add_argument('--mac',action='store_true');a=p.parse_args();smoke(a.root.resolve(),a.mac)

@@ -36,6 +36,11 @@ const port = Number(option('port') || 17910);
 const supervisor = new ServiceSupervisor({ python: option('python') || process.env.AIEYRA_CONTROL_PYTHON || installation.python || (process.platform === 'win32' ? 'python' : 'python3'),
   script: testing && process.env.AIEYRA_CONTROL_TEST_SERVICE ? path.resolve(process.env.AIEYRA_CONTROL_TEST_SERVICE) : path.join(root, 'service', 'main.py'),
   cwd: root, port, dataDir: option('service-data-dir') || installation.shared, config: option('config') || installation.config });
+if (process.env.AIEYRA_CONTROL_PACKAGE_TEST === '1') {
+  console.log(JSON.stringify({ root, home: installation.home, packaged: app.isPackaged, python: supervisor.python, port }));
+  supervisor.on('state', value => console.log(JSON.stringify(value)));
+  process.on('unhandledRejection', error => console.error(error));
+}
 let window = null, tray = null, quitting = false, cleaned = false, cleanup = null, loadedService = false, loadingService = false;
 let humanHost = null, humanFeed = null, ownerPipe = null, humanReady = false, pendingHumanOpen = null;
 let ownerFailureCode = 0;
