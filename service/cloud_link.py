@@ -41,6 +41,7 @@ class CloudLink:
     def status(self):
         with self.lock:
             active=bool(self.session and self.session['expires_at']>time.time())
+            if self.session and not active:self.invalidate()
             return {'enabled':active,'mode':'cloud_enabled' if active else 'local_only',
                     'user':self.session['user'] if active else None,'pending':bool(self.flow and self.flow['expires']>time.time()),
                     'release':self.release if active else None,'last_check':self.last_check if active else None,'error':self.error if active else None}

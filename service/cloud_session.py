@@ -39,7 +39,8 @@ class SessionVault:
             return True
         except (OSError,subprocess.SubprocessError):return False
     def clear(self):
-        self.file.unlink(missing_ok=True)
+        try:self.file.unlink(missing_ok=True)
+        except OSError:pass
         if sys.platform=='darwin':
             try:subprocess.run(['security','delete-generic-password','-s','cn.aieyra.control','-a',self.account],capture_output=True,timeout=5)
             except (OSError,subprocess.SubprocessError):pass

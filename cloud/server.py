@@ -220,6 +220,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(data);remaining-=len(data)
     def release_events(self):
         token=self.token();self.server.app.session(token)
+        if self.command=='HEAD':return self.respond(200,headers={'Content-Type':'text/event-stream'})
         if not self.server.stream_slots.acquire(blocking=False):raise Error('stream_capacity',503)
         try:
             self.send_response(200)
