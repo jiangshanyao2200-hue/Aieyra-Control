@@ -86,7 +86,8 @@ class AgentClientTests(unittest.TestCase):
         client = self.client()
         client.keepalive_interval = 0.001
         client._sessions.add("session-one")
-        client._activity["session-one"] = (0, 0)
+        expired = time.monotonic() - 20000
+        client._activity["session-one"] = (expired, expired)
         calls = []
 
         def call(route, body=None):
