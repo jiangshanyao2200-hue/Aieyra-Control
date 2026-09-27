@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import secrets
+import re
 import socket
 import threading
 import time
@@ -134,6 +135,10 @@ class CloudLink:
                 "mode": "cloud_enabled" if active else "local_only",
                 "user": self.session["user"] if active else None,
                 "pending": bool(self.flow and self.flow["expires"] > time.time()),
+                "authorize_url": self.flow["authorize_url"]
+                if self.flow and self.flow["expires"] > time.time()
+                else None,
+                "expires_in": max(0, int(self.flow["expires"] - time.time())) if self.flow else 0,
                 "release": self.release if active else None,
                 "last_check": self.last_check if active else None,
                 "error": self.error if active else None,
@@ -157,24 +162,32 @@ class CloudLink:
                     "redirect_uri": ORIGIN + "/auth/callback",
                 },
             )
-            if not isinstance(result.get("authorize_url"), str) or not result[
-                "authorize_url"
-            ].startswith("https://api.aieyra.cn/aieyra/control/authorize?flow="):
+            if (
+                not isinstance(result, dict)
+                or not isinstance(result.get("flow_id"), str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{43}", result["flow_id"])
+                or result.get("authorize_url")
+                != "https://api.aieyra.cn/aieyra/control/authorize?flow=" + result["flow_id"]
+            ):
                 raise CloudError("invalid_authorize_url", 502)
             self.flow = {
                 "flow_id": result["flow_id"],
                 "verifier": verifier,
                 "state": state,
                 "expires": time.time() + 300,
+                "authorize_url": result["authorize_url"],
             }
             return {"authorize_url": result["authorize_url"], "expires_in": 300}
 
     def poll(self):
         with self.lock:
+            if not self.flow and self.session and self.session["expires_at"] > time.time():
+                return self.status()
             if not self.flow or self.flow["expires"] <= time.time():
                 raise CloudError("login_expired", 401)
             value = self.transport(
-                "/v1/auth/poll", {k: v for k, v in self.flow.items() if k != "expires"}
+                "/v1/auth/poll",
+                {k: self.flow[k] for k in ("flow_id", "verifier", "state")},
             )
             if value.get("pending"):
                 return {"pending": True}

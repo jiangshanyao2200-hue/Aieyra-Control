@@ -306,8 +306,16 @@ try {
     await open('/auth/callback');
     await page.evaluate(() => sessionStorage.setItem('control-login', 'bad json'));
     await page.reload();
-    assert.ok((await page.locator('[role=status]').innerText()).includes('返回 Control'));
+    assert.ok((await page.locator('[role=status]').innerText()).includes('没有待完成的登录'));
     assert.ok(await page.locator('[data-login]').isVisible());
+  });
+  await test('desktop-authorization-callback-clearly-returns-to-control', async () => {
+    await open('/auth/callback?code=fixture-code&flow=fixture-flow');
+    assert.ok(
+      (await page.locator('[role=status]').innerText()).includes('授权已完成，请返回 Control'),
+    );
+    assert.equal(await page.locator('[data-login]').isVisible(), false);
+    assert.equal(new URL(page.url()).search, '');
   });
   await test('private-feedback-safe-rendering-and-mobile-login', async () => {
     await open('/feedback');

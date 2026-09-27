@@ -2,6 +2,7 @@
 
 ## 0.6.2
 
+- Sign-in opens the official authorization page in one click. Pending login survives a page reload, transient network errors retry within the flow lifetime, and expired official cookies return to sign-in. Desktop authorization links are strictly validated before opening the browser.
 - Project registration and enrollment preserve current memory metadata and report document readiness.
 - Bounded agent lease and finish commands support explicit working intervals and independent release verification.
 - Finish tolerates a lost disconnect response, reports unconfirmed release as failure and detects new memory revisions even when their content hash is unchanged.

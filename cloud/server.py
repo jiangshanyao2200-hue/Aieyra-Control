@@ -21,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, urlencode
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
+from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "service"))
@@ -345,10 +346,20 @@ class Cloud(FeedbackStore):
                     if len(body) > 65536:
                         raise Error("identity_unavailable", 503)
                     return json.loads(body)
+            except HTTPError as error:
+                status = error.code
+                error.close()
+                if status == 401:
+                    return None
+                raise Error("identity_unavailable", 503) from None
             except Exception:
                 raise Error("identity_unavailable", 503) from None
 
         s = read("/api/aieyra/session")
+        if s is None:
+            return None
+        if not isinstance(s, dict):
+            raise Error("identity_unavailable", 503)
         if s.get("success") is not True:
             return None
         a = s.get("data", {})
@@ -356,6 +367,10 @@ class Cloud(FeedbackStore):
         if type(uid) is not int or uid <= 0 or a.get("status") != 1:
             raise Error("account_unavailable", 403)
         envelope = read("/api/user/self", {"new-api-user": str(uid)})
+        if envelope is None:
+            return None
+        if not isinstance(envelope, dict):
+            raise Error("identity_unavailable", 503)
         b = envelope.get("data", {})
         if (
             envelope.get("success") is not True

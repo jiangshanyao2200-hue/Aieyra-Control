@@ -115,6 +115,7 @@ const server = createServer(async (req, res) => {
         accountPending = true;
         return send(200, {
           authorize_url: 'https://api.aieyra.cn/aieyra/control/authorize?flow=' + 'a'.repeat(43),
+          expires_in: 300,
         });
       }
       if (u.pathname.endsWith('/poll')) {
@@ -678,8 +679,18 @@ try {
   });
   await test('account-sidebar-login-poll-and-logout', async () => {
     await open();
+    const navigations = [];
+    await context.route('https://api.aieyra.cn/**', (route) => {
+      navigations.push(route.request().url());
+      return route.fulfill({ contentType: 'text/html', body: '<h1>Fixture sign-in</h1>' });
+    });
     await page.locator('#open-account').click();
+    const popupReady = page.waitForEvent('popup');
     await page.locator('[data-account=login]').click();
+    const popup = await popupReady;
+    await popup.locator('h1').waitFor();
+    assert.equal(navigations.length, 1);
+    assert.equal(await popup.evaluate(() => window.opener), null);
     await page.locator('a.account-primary').waitFor();
     assert.ok(
       (await page.locator('a.account-primary').getAttribute('href')).startsWith(

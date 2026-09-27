@@ -1,4 +1,6 @@
 import importlib.util
+import io
+import json
 import secrets
 import tempfile
 import threading
@@ -97,6 +99,55 @@ class CloudTests(unittest.TestCase):
         self.assertEqual(result["scope"], "desktop")
         with self.assertRaises(cloud.Error):
             self.app.poll(poll)
+
+    def test_expired_official_cookie_returns_to_login(self):
+        self.app.identity = self.app.newapi_identity
+        with patch.object(cloud, "build_opener") as factory:
+            factory.return_value.open.side_effect = HTTPError(
+                cloud.API + "/api/aieyra/session", 401, "expired", {}, io.BytesIO(b"{}")
+            )
+            started = self.app.start(
+                {
+                    "challenge": cloud.challenge(secrets.token_urlsafe(32)),
+                    "state": secrets.token_urlsafe(32),
+                    "scope": "desktop",
+                    "redirect_uri": cloud.CLOUD + "/auth/callback",
+                }
+            )
+            location = self.app.authorize(started["flow_id"], "session=expired-fixture")
+            self.assertEqual(urlsplit(location).path, "/sign-in")
+            self.assertEqual(
+                parse_qs(urlsplit(location).query)["redirect"],
+                ["/aieyra/control/authorize?flow=" + started["flow_id"]],
+            )
+
+    def test_identity_outage_is_not_treated_as_expired_cookie(self):
+        with patch.object(cloud, "build_opener") as factory:
+            factory.return_value.open.side_effect = HTTPError(
+                cloud.API + "/api/aieyra/session", 503, "offline", {}, io.BytesIO(b"{}")
+            )
+            with self.assertRaises(cloud.Error) as error:
+                self.app.newapi_identity("session=expired-fixture")
+            self.assertEqual(error.exception.status, 503)
+
+    def test_pending_login_recovery_and_repeated_local_poll(self):
+        calls = []
+
+        def transport(path, body=None, token=None):
+            calls.append(path)
+            return self.app.start(body) if path.endswith("/start") else self.app.poll(body)
+
+        link = CloudLink(transport)
+        started = link.start()
+        pending = link.status()
+        self.assertEqual(pending["authorize_url"], started["authorize_url"])
+        self.assertGreater(pending["expires_in"], 0)
+        self.assertNotIn("verifier", json.dumps(pending))
+        self.app.authorize(link.flow["flow_id"], "valid")
+        current = link.poll()
+        self.assertTrue(current["enabled"])
+        self.assertEqual(link.poll(), current)
+        self.assertEqual(calls, ["/v1/auth/start", "/v1/auth/poll"])
 
     def test_unsigned_outbound_disabled_until_login_and_after_logout(self):
         calls = []

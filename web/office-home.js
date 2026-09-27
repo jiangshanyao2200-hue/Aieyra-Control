@@ -352,8 +352,14 @@ async function accountRequest(path, body) {
       cache: 'no-store',
       signal: controller.signal,
     });
-    if (!r.ok) throw Error('account_request_failed');
-    return await r.json();
+    const value = await r.json().catch(() => null);
+    if (!r.ok) {
+      throw Object.assign(Error('account_request_failed'), {
+        status: r.status,
+        code: typeof value?.error === 'string' ? value.error : 'account_request_failed',
+      });
+    }
+    return value;
   } finally {
     clearTimeout(timeout);
     controllers.delete(controller);

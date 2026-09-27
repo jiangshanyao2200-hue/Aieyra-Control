@@ -18,6 +18,7 @@ const { HumanNotificationHost } = require('./human-notification-host.cjs');
 const { HumanRequestFeed } = require('./human-request-feed.cjs');
 const { OSOwnerPipe, validOwnerPipeName } = require('./os-owner-pipe.cjs');
 const { installationPaths, prepareDirectories } = require('./paths.cjs');
+const { openLogin } = require('./login.cjs');
 const root = path.resolve(__dirname, '..');
 const installation = installationPaths({ packaged: app.isPackaged, source: root });
 try {
@@ -419,6 +420,9 @@ else {
       changed: updateMenus,
     });
     ipcMain.handle('control:status', (event) => (trusted(event) ? status() : null));
+    ipcMain.handle('control:open-login', (event, url) =>
+      trusted(event) ? openLogin(url, shell) : false,
+    );
     ipcMain.handle('control:retry', (event) => {
       if (trusted(event)) supervisor.retry();
     });

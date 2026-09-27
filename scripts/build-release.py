@@ -55,7 +55,7 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
         "sequence": sequence,
         "created_at": int(time.time()),
         "minimum_updater": 1,
-        "notes": "项目记忆与工位租约状态同步；修复账号异步刷新、反馈校验与断开核验；精简界面残留并统一源码、测试和开发规范。",
+        "notes": "修复登录跳转、过期账号 Cookie 与网络重试；同步项目记忆和工位租约；修复反馈与断开核验；统一源码、测试和开发规范。",
         "source": {
             "path": "/artifacts/" + source.name,
             "sha256": digest(source.read_bytes()),

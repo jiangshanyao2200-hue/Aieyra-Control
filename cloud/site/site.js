@@ -76,10 +76,17 @@ if (location.pathname === '/auth/callback') {
       const next = sessionStorage.getItem('control-return');
       sessionStorage.removeItem('control-return');
       location.replace(next === '/feedback' ? next : '/download');
-    } catch {
-      say('连接已过期，请重试。');
+    } catch (error) {
+      say(
+        error.status === 401
+          ? '登录已过期，请重新登录。'
+          : '登录暂未完成，请重新登录；账号和密码无需在 Control 中填写。',
+      );
     }
-  } else say('客户端发起的连接，请返回 Control。');
+  } else if (q.get('code') && q.get('flow')) {
+    say('授权已完成，请返回 Control；客户端会自动连接。');
+    $('[data-login]').hidden = true;
+  } else say('没有待完成的登录，请重新登录。');
 }
 
 function startRoom() {
