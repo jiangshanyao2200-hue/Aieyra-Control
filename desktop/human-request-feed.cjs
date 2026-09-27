@@ -80,10 +80,11 @@ class HumanRequestFeed {
     ledger,
     ready = () => true,
     interval = 15000,
+    inactiveInterval = 60000,
     read = readJSON,
     changed = () => {},
   }) {
-    Object.assign(this, { baseUrl, ledger, ready, interval, read, changed });
+    Object.assign(this, { baseUrl, ledger, ready, interval, inactiveInterval, read, changed });
     this.stopped = true;
     this.timer = null;
     this.pending = null;
@@ -101,8 +102,11 @@ class HumanRequestFeed {
     return { ...this.state, running: !this.stopped, pending: Boolean(this.pending) };
   }
   publish(state) {
+    const changed = Object.keys(state).some(
+      (key) => key !== 'checked_at' && state[key] !== this.state[key],
+    );
     this.state = { ...this.state, ...state };
-    this.changed();
+    if (changed) this.changed();
   }
   start() {
     if (!this.stopped) return;
@@ -136,7 +140,10 @@ class HumanRequestFeed {
     } finally {
       this.pending = null;
       if (!this.stopped) {
-        this.timer = setTimeout(() => void this.tick(), this.interval);
+        const delay = ['human_contract_not_connected', 'waiting_service'].includes(this.state.state)
+          ? Math.max(this.interval, this.inactiveInterval)
+          : this.interval;
+        this.timer = setTimeout(() => void this.tick(), delay);
         this.timer.unref?.();
       }
     }

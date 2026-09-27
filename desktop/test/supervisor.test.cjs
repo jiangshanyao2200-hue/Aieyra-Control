@@ -27,6 +27,7 @@ function manager(p) {
     script: path.join(__dirname, 'service-fixture.py'),
     cwd: __dirname,
     interval: 60,
+    healthyInterval: 100,
     restartBase: 30,
     restartMax: 100,
     startupTimeout: 2500,
@@ -35,6 +36,7 @@ function manager(p) {
 test('owned service starts, restarts after crash, then exits with its owner', async () => {
   const p = await port(),
     s = manager(p);
+  s.healthyInterval = 30000;
   try {
     s.start();
     await until(() => s.snapshot().state === 'ready');
@@ -48,6 +50,16 @@ test('owned service starts, restarts after crash, then exits with its owner', as
   } finally {
     await s.stop();
   }
+});
+test('unchanged healthy observations do not emit duplicate desktop updates', async () => {
+  const s = manager(await port());
+  const observations = [];
+  s.on('state', (state) => observations.push(state));
+  s.publish({ state: 'ready', ownership: 'external', version: 'fixture' });
+  s.publish({ state: 'ready', ownership: 'external', version: 'fixture' });
+  s.publish({ state: 'offline', error: 'connection lost' });
+  assert.equal(observations.length, 2);
+  assert.equal(observations[1].state, 'offline');
 });
 test('existing service is reused and survives another supervisor stopping', async () => {
   const p = await port(),

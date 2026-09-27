@@ -52,7 +52,7 @@ from growth import Growth
 from local_hub import create_local_hub
 from paths import shared_directory, configuration_file, initialize as initialize_paths
 
-VERSION = "0.6.3"
+VERSION = "0.6.4"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -132,6 +132,12 @@ class Application:
         self.queue_runner = queue_runner or self.run_queue
         self.lock = threading.RLock()
         self.stop = threading.Event()
+        self.sync_wake = threading.Event()
+        self.cloud_wake = threading.Event()
+        self.feedback_wake = threading.Event()
+        self.collaboration_wake = threading.Event()
+        self.hub_refresh_lock = threading.Lock()
+        self.hub_refreshed_at = 0.0
         self.csrf = secrets.token_urlsafe(32)
         self.hub_snapshot = self.store.cache() or {}
         self.connection = {
@@ -290,6 +296,10 @@ class Application:
         }
 
     def snapshot(self):
+        # Local reads observe current leases and committed writes even while the
+        # background worker sleeps. Coalesce simultaneous window requests.
+        if getattr(self.hub, "is_local", False):
+            self.refresh_hub(max_age=1)
         with self.lock:
             value = copy.deepcopy(self.hub_snapshot)
             agents = value.get("agents", [])
@@ -599,11 +609,26 @@ class Application:
                 delivery["id"], "unknown", error="运行时投递结果待核对，未自动重发。"
             )
 
-    def tick(self):
+    def refresh_hub(self, max_age=0):
+        with self.hub_refresh_lock:
+            if max_age and time.monotonic() - self.hub_refreshed_at < max_age:
+                return
+            self._refresh_hub()
+
+    def _refresh_hub(self):
         try:
             snapshot = self.hub.status()
             snapshot["_fetched_at"] = now()
-            self.store.cache(snapshot)
+            # Clock-only observations stay in memory. Persist real state changes
+            # without repeatedly rewriting the full cached office to SQLite.
+            previous = {
+                k: v
+                for k, v in self.hub_snapshot.items()
+                if k not in ("server_time", "_fetched_at")
+            }
+            current = {k: v for k, v in snapshot.items() if k not in ("server_time", "_fetched_at")}
+            if current != previous:
+                self.store.cache(snapshot)
             with self.lock:
                 self.hub_snapshot = snapshot
                 self.connection = {
@@ -612,11 +637,43 @@ class Application:
                     "error": None,
                     "source": "coordination",
                 }
+                self.hub_refreshed_at = time.monotonic()
         except Exception:
             with self.lock:
                 self.connection.update(
                     state="offline", error="协作中心暂时不可达，显示最近成功数据。"
                 )
+
+    def wake_workers(self, path=None):
+        events = [self.sync_wake]
+        if path is None or path.startswith(("/api/cloud/", "/api/agent/v1/cloud/")):
+            events.extend((self.cloud_wake, self.feedback_wake))
+        if (
+            path is None
+            or path == "/api/management"
+            or any(
+                name in path for name in ("human", "product", "seat", "host", "adapter", "project")
+            )
+        ):
+            events.append(self.collaboration_wake)
+        for event in events:
+            event.set()
+
+    def sync_interval(self):
+        # External runtime files and outstanding deliveries retain the original
+        # latency. The local office otherwise wakes on writes, with a bounded
+        # fallback for lease expiry and out-of-process changes.
+        if (
+            not getattr(self.hub, "is_local", False)
+            or self.connection["state"] != "online"
+            or self.observer.bindings
+            or self.store.deliveries(("pending", "sending", "queued", "received", "unknown"))
+        ):
+            return 3
+        return 30
+
+    def tick(self):
+        self.refresh_hub()
         with self.lock:
             self.observer.observe()
             receipts = dict(self.observer.receipts)
@@ -679,17 +736,21 @@ class Application:
 
     def run(self):
         while not self.stop.is_set():
+            self.sync_wake.clear()
+            delay = 3
             try:
                 self.tick()
+                delay = self.sync_interval()
             except Exception:
                 with self.lock:
                     self.connection.update(error="本地同步暂时失败，将保留记录并重试。")
-            self.stop.wait(3)
+            self.sync_wake.wait(delay)
 
     def cloud_monitor(self):
         while not self.stop.is_set():
+            self.cloud_wake.clear()
             self.cloud.background_check()
-            self.stop.wait(15)
+            self.cloud_wake.wait(60 if not self.cloud.session else 15)
 
     def monitor(self):
         configuration = self.config.get("monitoring")
@@ -719,6 +780,7 @@ class Application:
 
     def monitor_collaboration(self):
         while not self.stop.is_set():
+            self.collaboration_wake.clear()
             try:
                 self.os_sessions.refresh()
                 self.collaboration.poll()
@@ -726,7 +788,13 @@ class Application:
                 self.product_jobs.poll()
             except Exception:
                 pass
-            self.stop.wait(3)
+            self.collaboration_wake.wait(
+                3
+                if self.collaboration.sources
+                or self.humans.projects
+                or self.product_commands.sources
+                else 30
+            )
 
 
 class Server(ThreadingHTTPServer):
@@ -1115,6 +1183,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self._unread_post_body = True
+        authorized = False
         try:
             path = urlsplit(self.path).path
             self.guard()
@@ -1157,6 +1226,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             if not isinstance(value, dict):
                 raise Problem("invalid_json", "请求需为JSON对象。")
+            authorized = True
             if peer:
                 action = path[14:]
                 result = (
@@ -1248,6 +1318,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send(400, {"error": "请求内容无效。", "code": "invalid_json"})
         except Exception:
             self.send(500, {"error": "保存失败，请稍后重试。", "code": "write_failed"})
+        finally:
+            if authorized:
+                self.server.app.wake_workers(path)
 
 
 class InstanceLock:
@@ -1326,11 +1399,12 @@ def main():
 
     def feedback_monitor():
         while not application.stop.is_set():
+            application.feedback_wake.clear()
             try:
                 application.feedback.flush()
             except Exception:
                 pass  # Retain the durable queue; never log diagnostics.
-            application.stop.wait(10)
+            application.feedback_wake.wait(60 if not application.cloud.session else 10)
 
     threading.Thread(target=feedback_monitor, name="control-private-feedback", daemon=True).start()
     threading.Thread(target=application.monitor, name="control-monitor", daemon=True).start()
@@ -1350,6 +1424,7 @@ def main():
         pass
     finally:
         application.stop.set()
+        application.wake_workers()
         server.server_close()
         instance.close()
 

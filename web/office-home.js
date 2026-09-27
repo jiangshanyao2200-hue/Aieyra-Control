@@ -32,6 +32,7 @@ let rows = [],
   taskFilter = 'all',
   chatOpenGeneration = 0,
   backdropPressed = false;
+let timer = null;
 let chat = {
   items: [],
   before: null,
@@ -407,6 +408,7 @@ async function loadHistory(older = false) {
 }
 async function refresh() {
   if (polling || disposed) return;
+  clearTimeout(timer);
   polling = true;
   $('#main').dataset.refreshing = 'true';
   await Promise.all(
@@ -442,6 +444,7 @@ async function refresh() {
   }
   render();
   $('#main').dataset.refreshing = 'false';
+  if (!document.hidden) timer = setTimeout(refresh, 8000);
 }
 
 document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
@@ -541,15 +544,13 @@ window.addEventListener('resize', () => {
 });
 window.addEventListener('pagehide', () => {
   disposed = true;
-  clearInterval(timer);
+  clearTimeout(timer);
   controllers.forEach((c) => c.abort());
 });
 document.addEventListener('visibilitychange', () => {
+  clearTimeout(timer);
   if (!document.hidden) refresh();
 });
 render();
 refresh();
 account.refresh();
-const timer = setInterval(() => {
-  if (!document.hidden) refresh();
-}, 8000);

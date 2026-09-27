@@ -101,3 +101,32 @@ test('tray offers bounded snooze and settings but no approve/dispatch action', (
   assert.equal(f.ledger.snapshot().items[0].state, 'waiting_user');
   assert.equal(f.opened.length, 0);
 });
+test('idle, seen, disabled and focused reminders have no scheduled scan', (t) => {
+  const f = setup(t);
+  assert.equal(f.host.timer, null);
+  f.update();
+  assert.ok(f.host.timer);
+  f.host.present();
+  f.host.schedule();
+  assert.equal(f.host.timer, null);
+  f.ledger.data.seen = {};
+  f.host.focused = () => true;
+  f.host.schedule();
+  assert.equal(f.host.timer, null);
+  f.host.focused = () => false;
+  f.host.schedule();
+  assert.ok(f.host.timer);
+  f.ledger.setEnabled(false);
+  assert.equal(f.host.timer, null);
+});
+test('snooze schedules its actual deadline and fresh items resume after blur', (t) => {
+  const f = setup(t);
+  f.update();
+  f.ledger.snooze(15);
+  assert.ok(f.ledger.nextAttentionDelay() > 899000);
+  assert.ok(f.host.timer._idleTimeout > 899000);
+  f.ledger.snooze(0);
+  assert.equal(f.ledger.nextAttentionDelay(), 0);
+  f.ledger.unavailable();
+  assert.equal(f.host.timer, null);
+});

@@ -710,7 +710,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200, app.post(session, b))
                 raise Error("not_found", 404)
             if path == "/healthz":
-                return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.3"})
+                return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.4"})
             if path.startswith("/v1/matrix/"):
                 session = (
                     app.session(self.token())

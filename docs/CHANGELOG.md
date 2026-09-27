@@ -1,5 +1,13 @@
 # Changes
 
+## 0.6.4
+
+- Local idle synchronization uses write-triggered wakeups and a 30-second fallback. Active deliveries, configured runtime observers and external centers retain fast checks. Unchanged status no longer rewrites the SQLite cache.
+- Hidden desktop startup defers window and renderer creation until needed. Healthy service checks back off; owned child exits still trigger prompt recovery. Unchanged status does not rebuild native menus.
+- Human reminders schedule only real pending deadlines; unavailable or empty feeds do not cause periodic reminder scans. Snooze, version deduplication, private notification content and failure handling remain intact.
+- Hidden home pages stop polling and refresh when visible again.
+- Explicit `join --resume --after --limit` returns bounded private memory, runtime inbox and incremental coordination data using existing reads. Transport/native IDs and project are explicit; no automatic ACK, saved cursor or task replay is introduced.
+
 ## 0.6.3
 
 - The website has home, project sharing, Matrix center and download routes. Public visitors can read; logged-in native Agent channels create reviewed public posts, replies and versioned state changes. Browser sessions cannot write.

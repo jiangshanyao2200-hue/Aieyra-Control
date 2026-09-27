@@ -57,6 +57,7 @@ class ServiceSupervisor extends EventEmitter {
     dataDir,
     config,
     interval = 2000,
+    healthyInterval = Math.max(interval, 30000),
     startupTimeout = 15000,
     restartBase = 1000,
     restartMax = 30000,
@@ -71,6 +72,7 @@ class ServiceSupervisor extends EventEmitter {
       dataDir,
       config,
       interval,
+      healthyInterval,
       startupTimeout,
       restartBase,
       restartMax,
@@ -98,7 +100,9 @@ class ServiceSupervisor extends EventEmitter {
     return { ...this.state, ownedPid: this.child?.pid || null };
   }
   publish(state) {
-    this.state = { ...this.state, ...state };
+    const next = { ...this.state, ...state };
+    if (Object.keys(next).every((key) => next[key] === this.state[key])) return;
+    this.state = next;
     this.emit('state', this.snapshot());
   }
   start() {
@@ -122,8 +126,15 @@ class ServiceSupervisor extends EventEmitter {
       this.publish({ state: 'offline', error: '服务检查失败，正在重连。' });
     } finally {
       this.pending = null;
-      if (!this.stopped) this.timer = setTimeout(() => void this.tick(), this.interval);
+      if (!this.stopped) this.schedule();
     }
+  }
+  schedule() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(
+      () => void this.tick(),
+      this.state.state === 'ready' ? this.healthyInterval : this.interval,
+    );
   }
   backoff() {
     this.failures = Math.min(this.failures + 1, 16);
@@ -224,6 +235,7 @@ class ServiceSupervisor extends EventEmitter {
           ownership: 'none',
           error: '无法启动 Python，请检查启动器的 PythonPath。',
         });
+        if (!this.stopped) this.schedule();
       }
     });
     child.once('exit', (code, signal) => {
@@ -236,6 +248,7 @@ class ServiceSupervisor extends EventEmitter {
           lastExitCode: code,
           lastExitSignal: signal,
         });
+        if (!this.stopped) this.schedule();
       }
     });
   }

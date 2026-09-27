@@ -12,7 +12,6 @@ class HumanNotificationHost {
   }) {
     Object.assign(this, { ledger, Notification, icon, open, focused, changed, aggregateMs });
     this.timer = null;
-    this.tick = null;
     this.toasts = new Set();
     this.stopped = true;
     this.onChange = () => {
@@ -24,16 +23,22 @@ class HumanNotificationHost {
     if (!this.stopped) return;
     this.stopped = false;
     this.ledger.on('change', this.onChange);
-    this.tick = setInterval(() => this.schedule(), 10000);
-    this.tick.unref?.();
     this.schedule();
   }
   schedule() {
-    if (this.stopped || this.timer) return;
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.present();
-    }, this.aggregateMs);
+    clearTimeout(this.timer);
+    this.timer = null;
+    if (this.stopped || this.focused() || !this.Notification.isSupported()) return;
+    const delay = this.ledger.nextAttentionDelay();
+    if (delay === null) return;
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        this.present();
+        this.schedule();
+      },
+      Math.max(delay, this.aggregateMs),
+    );
     this.timer.unref?.();
   }
   present() {
@@ -110,9 +115,7 @@ class HumanNotificationHost {
   stop() {
     this.stopped = true;
     clearTimeout(this.timer);
-    clearInterval(this.tick);
     this.timer = null;
-    this.tick = null;
     this.ledger.off('change', this.onChange);
     for (const toast of this.toasts) {
       try {

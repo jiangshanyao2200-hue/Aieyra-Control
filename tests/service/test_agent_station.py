@@ -151,6 +151,66 @@ class StationTests(unittest.TestCase):
             results = list(pool.map(join, range(5)))
         self.assertEqual(len(set(results)), 1)
 
+    def test_explicit_resume_reuses_bounded_reads_without_ack_or_cursor_persistence(self):
+        first = self.station.ensure("native-one")
+        client = self.station.client
+        for index in range(3):
+            client.call(
+                "center/message",
+                {
+                    "request_id": "resume-message-" + str(index),
+                    "project": "demo",
+                    "kind": "progress",
+                    "body": "PRIVATE handoff " + str(index),
+                },
+            )
+        with patch.object(client, "call", wraps=client.call) as calls:
+            result = self.station.ensure("native-one", resume=True, after=0, limit=2)
+        self.assertEqual(result["project"], "demo")
+        self.assertEqual(result["transport_session_id"], first["session_id"])
+        bundle = result["resume"]
+        self.assertEqual(bundle["read_order"], ["memory", "runtime_inbox", "coordination"])
+        self.assertEqual(bundle["memory"]["memory"]["version"], 0)
+        self.assertEqual(len(bundle["coordination"]["messages"]), 2)
+        cursor = bundle["coordination"]["next_cursor"]
+        next_result = self.station.ensure("native-one", resume=True, after=cursor, limit=2)
+        self.assertEqual(len(next_result["resume"]["coordination"]["messages"]), 1)
+        routes = [c.args[0] for c in calls.call_args_list]
+        for route in ("memory", "inbox", "center/inbox"):
+            self.assertEqual(routes.count(route), 1)
+        self.assertNotIn("center/ack", routes)
+        self.assertNotIn("center/history", routes)
+        self.assertTrue(bundle["ack_required_after_read"])
+        self.assertFalse(bundle["cursor_persisted"])
+        state = self.station.state_file.read_text()
+        self.assertNotIn("PRIVATE", state)
+        self.assertNotIn("cursor", state)
+        messages = client.call("center/history")["messages"]
+        self.assertTrue(all(row["receipt_count"] == 0 for row in messages))
+
+    def test_resume_rejects_invalid_bounds_before_connecting(self):
+        for after, limit in ((-1, 20), (True, 20), (0, 0), (0, 101), (2**63, 20)):
+            with self.subTest(after=after, limit=limit), self.assertRaises(adapter.Error):
+                self.station.ensure("native-one", resume=True, after=after, limit=limit)
+        self.assertFalse(self.station.state_file.exists())
+
+    def test_resume_oversized_chat_returns_explicit_separate_read(self):
+        original = self.station.client.call
+
+        def large(route, body=None, query=None):
+            value = original(route, body, query)
+            if route == "center/inbox":
+                value["messages"] = [
+                    {"id": "large", "seq": 1, "project": "demo", "body": "x" * 140000}
+                ]
+            return value
+
+        with patch.object(self.station.client, "call", side_effect=large):
+            result = self.station.ensure("native-one", resume=True)
+        self.assertEqual(
+            result["resume"]["coordination"], {"truncated": True, "read_separately": "center/inbox"}
+        )
+
     def test_lost_connect_response_reads_back_without_replay(self):
         actual = self.station.client.call
         connects = []

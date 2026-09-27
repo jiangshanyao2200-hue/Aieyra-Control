@@ -1,6 +1,6 @@
 {
   "name": "aieyra-control-development",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "description": "Development checks for the Control desktop, local service and website",
   "scripts": {

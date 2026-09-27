@@ -240,9 +240,16 @@ class Station:
             "Communication presence is not proof of execution or authorization."
         )
 
-    def ensure(self, native, working=False):
+    def ensure(self, native, working=False, *, resume=False, after=0, limit=20):
         if not isinstance(native, str) or not ID.fullmatch(native):
             raise Error("real_native_session_id_required")
+        if (
+            type(after) is not int
+            or not 0 <= after <= 9223372036854775807
+            or type(limit) is not int
+            or not 1 <= limit <= 100
+        ):
+            raise Error("invalid_resume_cursor")
         with lock(self.state_dir / "station.lock"):
             seat = self.seat()
             binding = seat.get("station_binding") or {}
@@ -368,8 +375,13 @@ class Station:
             memory = self.client.call("memory", query={"project": self.p["project"]})
             inbox = self.client.call("inbox", query={"session_id": sid})
             coordination = {"status": "unavailable"}
+            history = None
             try:
-                history = self.client.call("center/history")
+                history = (
+                    self.client.call("center/inbox", query={"after": after, "limit": limit})
+                    if resume
+                    else self.client.call("center/history")
+                )
                 messages = history.get("messages", [])
                 coordination = {
                     "status": "observed",
@@ -386,8 +398,10 @@ class Station:
             except Error:
                 # Chat availability must not turn an established connection into a failure.
                 pass
-            return {
+            result = {
                 "status": "connected",
+                "project": self.p["project"],
+                "transport_session_id": sid,
                 "session_id": sid,
                 "seat_id": seat["id"],
                 "native_session_id": native,
@@ -397,6 +411,42 @@ class Station:
                 "tasks_replayed": False,
                 "memory_saved": False,
             }
+            if resume:
+                # Only explicit CLI requests expose private project bodies. Hooks
+                # keep the compact result. Returned cursors are never auto-saved
+                # and reading this bundle does not acknowledge or execute anything.
+                def bounded(value, fallback):
+                    if len(json.dumps(value, ensure_ascii=False).encode("utf-8")) <= 131072:
+                        return value
+                    return {"truncated": True, "read_separately": fallback}
+
+                relevant = (
+                    None
+                    if history is None
+                    else {
+                        **history,
+                        "messages": [
+                            item
+                            for item in history.get("messages", [])
+                            if item.get("project") in (self.p["project"], "coordination")
+                        ],
+                        "scanned_count": len(history.get("messages", [])),
+                        "limit": limit,
+                        "after": after,
+                        "order": "ascending",
+                    }
+                )
+                result["resume"] = {
+                    "schema_version": 1,
+                    "read_order": ["memory", "runtime_inbox", "coordination"],
+                    "memory": bounded(memory, "memory"),
+                    "runtime_inbox": bounded(inbox, "inbox"),
+                    "coordination": bounded(relevant, "center/inbox"),
+                    "ack_required_after_read": True,
+                    "cursor_persisted": False,
+                    "content_is_project_data": True,
+                }
+            return result
 
     def start_lease(self, sid, state):
         alive = self.state_dir / (sid + ".worker")
@@ -792,6 +842,14 @@ def main():
     for command in ("join", "finish"):
         p = commands.add_parser(command)
         p.add_argument("--native-session-id", required=True)
+        if command == "join":
+            p.add_argument(
+                "--resume",
+                action="store_true",
+                help="Return bounded private handoff bodies; never ACK or save the cursor",
+            )
+            p.add_argument("--after", type=int, default=0)
+            p.add_argument("--limit", type=int, default=20)
     p = commands.add_parser("watch")
     p.add_argument("--session-id", required=True)
     for command in ("install", "uninstall"):
@@ -842,7 +900,9 @@ def main():
         elif args.command == "os-doctor":
             output = station.os_doctor()
         elif args.command == "join":
-            output = station.ensure(args.native_session_id, True)
+            output = station.ensure(
+                args.native_session_id, True, resume=args.resume, after=args.after, limit=args.limit
+            )
         elif args.command == "finish":
             output = station.finish(args.native_session_id)
         elif args.command == "watch":

@@ -58,6 +58,12 @@ test('actual service unavailable response is not verified zero and preserves las
   assert.equal(f.ledger.snapshot().pending_count, 1);
   assert.equal(f.ledger.snapshot().current, false);
   assert.equal(f.ledger.reserve(), null);
+  assert.equal(f.feed.timer._idleTimeout, 60000);
+  let updates = 0;
+  f.feed.changed = () => updates++;
+  f.ledger.on('change', () => updates++);
+  await f.feed.tick();
+  assert.equal(updates, 0);
 });
 test('unhealthy/foreign service never queried and simultaneous refreshes share one read', async (t) => {
   let count = 0,

@@ -709,6 +709,27 @@ try {
     assert.deepEqual(errors, []);
     assert.deepEqual(writes, []);
   });
+  await test('hidden-home-stops-polling-and-visible-home-refreshes-immediately', async () => {
+    await open();
+    await page.evaluate(() => {
+      window.__fixtureHidden = true;
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        get: () => window.__fixtureHidden,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(150);
+    const count = reads.length;
+    await page.waitForTimeout(8500);
+    assert.equal(reads.length, count);
+    await page.evaluate(() => {
+      window.__fixtureHidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(350);
+    assert.ok(reads.length > count);
+  });
 } finally {
   await browser.close();
   await new Promise((r) => server.close(r));

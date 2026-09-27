@@ -92,6 +92,7 @@ let humanHost = null,
   humanReady = false,
   pendingHumanOpen = null;
 let ownerFailureCode = 0;
+let menuSignature = null;
 const humans = new HumanNotificationLedger({
   file: path.join(app.getPath('userData'), 'human-notifications.json'),
 });
@@ -180,6 +181,9 @@ function updateMenus() {
       click: () => (osManaged ? window?.hide() : app.quit()),
     },
   ];
+  const signature = JSON.stringify(template);
+  if (signature === menuSignature) return;
+  menuSignature = signature;
   tray?.setContextMenu(Menu.buildFromTemplate(template));
   const attention = humans.snapshot();
   tray?.setToolTip(
@@ -250,6 +254,7 @@ function createWindow() {
     },
   });
   const current = window;
+  current.on('blur', () => humanHost?.schedule());
   humanReady = false;
   current.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
     if (isMainFrame && !inPlace) humanReady = false;
@@ -478,7 +483,7 @@ else {
       previousServiceState = next;
     });
     updateMenus();
-    createWindow();
+    if (!hidden) createWindow();
     supervisor.start();
     humanHost.start();
     humanFeed.start();

@@ -188,6 +188,7 @@ class HumanNotificationLedger extends EventEmitter {
     return true;
   }
   unavailable(reason = 'offline') {
+    if (this.feed === reason) return;
     this.feed = reason;
     this.emit('change');
   }
@@ -300,6 +301,30 @@ class HumanNotificationLedger extends EventEmitter {
       total: this.waiting().length,
       categories: [...new Set(items.map((item) => CATEGORIES[item.category]))],
     };
+  }
+  nextAttentionDelay() {
+    if (this.error || !this.fresh() || !this.data.enabled) return null;
+    const seen = this.data.seen;
+    // Migrate an observed legacy version before a freshness-only version arrives.
+    const migrate = this.waiting().some(
+      (item) => seen[keyOf(item)] && !seen[keyOf(item)].attention_hash && attentionHash(item),
+    );
+    const known = new Set(
+      Object.entries(seen)
+        .filter(([, entry]) => entry.attention_hash)
+        .map(([key, entry]) => `${key.slice(0, key.lastIndexOf('@'))}@${entry.attention_hash}`),
+    );
+    const unseen = this.waiting().some(
+      (item) =>
+        !Object.hasOwn(seen, keyOf(item)) &&
+        !(attentionHash(item) && known.has(`${item.id}@${attentionHash(item)}`)),
+    );
+    if (!unseen && !migrate) return null;
+    return Math.max(
+      0,
+      this.data.snoozed_until - this.now(),
+      this.data.last_presented_at ? this.data.last_presented_at + this.cooldown - this.now() : 0,
+    );
   }
   presentation(batch, state) {
     if (!batch || !['shown', 'failed'].includes(state)) return false;

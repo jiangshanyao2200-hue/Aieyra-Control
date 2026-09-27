@@ -56,6 +56,12 @@ Before a final response, the agent saves meaningful memory itself. `Stop`/`Sessi
 
 ## Installation and recovery
 
+For an explicit private handoff, use `join --native-session-id REAL_CURRENT_HOST_SESSION_ID --resume --after 0 --limit 20`. The result reuses the memory, runtime inbox and coordination reads already performed by join. It includes `project`, `transport_session_id` (also available as `session_id`), the distinct native ID, ordered bodies and `next_cursor`. Use `center/inbox` for ascending `after` pagination; `center/history` is a recent-history interface and does not implement that cursor.
+
+`--limit` is 1–100 (default 20); `--after` is a nonnegative 64-bit cursor. The coordination bundle includes only this project and coordination messages, but its cursor covers all scanned rows. Each body is limited to 128 KiB; an oversized body returns `truncated` and `read_separately`, never a false empty success. Default join and hooks remain compact. The bundle does not ACK, persist a cursor, save memory or execute tasks. After actually reading messages, ACK their IDs yourself and retain a cursor explicitly if needed. Renew presence at real work boundaries; an expired idle lease remains expired until a real join event.
+
+A project's source ownership and a credential's task-writing scope are separate. Read the returned project and use the actual transport ID. A `project_scope_denied` response is not repaired by substituting another agent's credential or silently changing its binding.
+
 Installation prepends a small managed block to AGENTS.md and merges only adapter-owned entries. It preserves unrelated instructions, MCP servers, hooks and settings. Exact changed bytes are backed up under the private profile state directory, with a before/after digest journal. Repeating install is content-idempotent. Uninstall removes only managed contributions; a manually edited contribution causes a conflict instead of being overwritten. A Windows CRLF/LF conversion alone is accepted for instruction blocks, while unrelated instruction bytes stay intact. Existing empty config containers may remain after removal.
 
 The project must be trusted by the host. Review and reload host configuration where its UI requires it. Local machine paths and private profile references in generated config should not be published; keep project-local configuration private according to the project's policy. Installation configures a host; it does not prove that host actually loaded or ran the hooks.
