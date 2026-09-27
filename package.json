@@ -1,0 +1,21 @@
+{
+  "name": "aieyra-control-development",
+  "version": "0.6.2",
+  "private": true,
+  "description": "Development checks for the Control desktop, local service and website",
+  "scripts": {
+    "check": "python scripts/check-quality.py",
+    "format": "python scripts/check-quality.py --format",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:service": "python -X utf8 -m unittest discover -s tests/service -p test_*.py",
+    "test:desktop": "npm test --prefix desktop",
+    "test:web": "npm test --prefix tests/web"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9"
+  },
+  "type": "module"
+}

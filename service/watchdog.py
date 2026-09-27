@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 import signal
 import threading
-import time
 import urllib.request
 
 
@@ -65,6 +64,7 @@ class InstanceLock:
         try:
             if os.name == "nt":
                 import msvcrt
+
                 self.file.seek(0)
                 if os.fstat(self.file.fileno()).st_size == 0:
                     self.file.write(b"0")
@@ -73,6 +73,7 @@ class InstanceLock:
                 msvcrt.locking(self.file.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self.file.close()
@@ -82,17 +83,21 @@ class InstanceLock:
         self.file.close()
 
 
-def lifecycle_state(seat: dict, previous: dict | None = None, current: dt.datetime | None = None) -> dict:
+def lifecycle_state(
+    seat: dict, previous: dict | None = None, current: dt.datetime | None = None
+) -> dict:
     """Consume only event type/timestamps from one rollout file."""
     current = current or utc_now()
     result = copy.deepcopy(previous or {})
-    result.update({
-        "seat_id": seat.get("seat_id"),
-        "thread_id": seat.get("thread_id"),
-        "label": seat.get("label"),
-        "state": result.get("state", "unknown"),
-        "last_error": None,
-    })
+    result.update(
+        {
+            "seat_id": seat.get("seat_id"),
+            "thread_id": seat.get("thread_id"),
+            "label": seat.get("label"),
+            "state": result.get("state", "unknown"),
+            "last_error": None,
+        }
+    )
     path = Path(str(seat.get("rollout", "")))
     if not path.is_file():
         result.update(state="unknown", last_error="rollout_missing")
@@ -126,7 +131,11 @@ def lifecycle_state(seat: dict, previous: dict | None = None, current: dt.dateti
                 result["last_event_type"] = kind or event_type
                 if event_type == "event_msg" and kind == "task_started":
                     result.update(state="running", turn_id=payload.get("turn_id"))
-                elif event_type == "event_msg" and kind in {"task_complete", "task_completed", "turn_aborted"}:
+                elif event_type == "event_msg" and kind in {
+                    "task_complete",
+                    "task_completed",
+                    "turn_aborted",
+                }:
                     result.update(state="idle", turn_id=None)
                 elif event_type in {"event_msg", "response_item"} and result.get("state") != "idle":
                     result["state"] = "running"
@@ -137,7 +146,9 @@ def lifecycle_state(seat: dict, previous: dict | None = None, current: dt.dateti
     result["observed_at"] = iso(current)
     activity_age = age_seconds(result.get("last_activity_at"), current)
     result["silence_seconds"] = activity_age
-    if result.get("state") == "running" and (activity_age is None or activity_age > float(seat.get("stale_seconds", 180))):
+    if result.get("state") == "running" and (
+        activity_age is None or activity_age > float(seat.get("stale_seconds", 180))
+    ):
         result.update(state="unknown", last_error="lifecycle_stale")
     return result
 
@@ -156,12 +167,28 @@ def read_quota(config: dict, current: dt.datetime | None = None) -> dict:
         return {"state": "unknown", "reason": "quota_scope_unverified", "observed_at": observed}
     observed_age = age_seconds(value.get("observed_at"), current)
     if observed_age is None or observed_age > float(config.get("quota_stale_seconds", 300)):
-        return {"state": "unknown", "reason": "quota_evidence_stale", "observed_at": value.get("observed_at")}
+        return {
+            "state": "unknown",
+            "reason": "quota_evidence_stale",
+            "observed_at": value.get("observed_at"),
+        }
     if value.get("exhausted") is True and value.get("route_verified") is True:
-        return {"state": "exhausted", "reason": value.get("reason", "verified_zero"), "observed_at": value.get("observed_at")}
+        return {
+            "state": "exhausted",
+            "reason": value.get("reason", "verified_zero"),
+            "observed_at": value.get("observed_at"),
+        }
     if value.get("exhausted") is False:
-        return {"state": "available", "reason": value.get("reason", "verified_available"), "observed_at": value.get("observed_at")}
-    return {"state": "unknown", "reason": "quota_exhaustion_not_proven", "observed_at": value.get("observed_at")}
+        return {
+            "state": "available",
+            "reason": value.get("reason", "verified_available"),
+            "observed_at": value.get("observed_at"),
+        }
+    return {
+        "state": "unknown",
+        "reason": "quota_exhaustion_not_proven",
+        "observed_at": value.get("observed_at"),
+    }
 
 
 def remaining_work(snapshot: dict, config: dict) -> bool:
@@ -173,7 +200,9 @@ def remaining_work(snapshot: dict, config: dict) -> bool:
     return False
 
 
-def evaluate(seats: list[dict], snapshot: dict, config: dict, state: dict, current: dt.datetime | None = None) -> dict:
+def evaluate(
+    seats: list[dict], snapshot: dict, config: dict, state: dict, current: dt.datetime | None = None
+) -> dict:
     current = current or utc_now()
     quota = read_quota(config, current)
     result = {
@@ -223,7 +252,9 @@ def evaluate(seats: list[dict], snapshot: dict, config: dict, state: dict, curre
     return result
 
 
-def request_json(url: str, method: str = "GET", data: dict | None = None, headers: dict | None = None) -> dict:
+def request_json(
+    url: str, method: str = "GET", data: dict | None = None, headers: dict | None = None
+) -> dict:
     body = None if data is None else json.dumps(data, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     with urllib.request.urlopen(request, timeout=20) as response:
@@ -252,12 +283,21 @@ def deliver_trigger(config: dict, http: dict, status: dict, counter: int) -> dic
         str(http["base_url"]) + "/api/chat",
         method="POST",
         data={"request_id": request_id, "target": config["leader_target"], "body": body},
-        headers={"Content-Type": "application/json", "Origin": http["base_url"], "X-Control-CSRF": http["csrf"]},
+        headers={
+            "Content-Type": "application/json",
+            "Origin": http["base_url"],
+            "X-Control-CSRF": http["csrf"],
+        },
     )
     delivery = result.get("delivery")
     if not isinstance(delivery, dict) or not isinstance(delivery.get("id"), str):
         raise RuntimeError("trigger_delivery_missing")
-    return {"request_id": request_id, "delivery_id": delivery["id"], "delivery_state": delivery.get("state", "pending"), "created_at": iso()}
+    return {
+        "request_id": request_id,
+        "delivery_id": delivery["id"],
+        "delivery_state": delivery.get("state", "pending"),
+        "created_at": iso(),
+    }
 
 
 def update_delivery(snapshot: dict, active: dict | None) -> dict | None:
@@ -277,20 +317,30 @@ def run_once(config: dict, state: dict) -> dict:
     current = utc_now()
     try:
         snapshot, http = poll_local(config)
-        previous = {item.get("seat_id"): item for item in state.get("seats", []) if isinstance(item, dict)}
-        seats = [lifecycle_state(seat, previous.get(seat.get("seat_id")), current) for seat in config.get("seats", [])]
+        previous = {
+            item.get("seat_id"): item for item in state.get("seats", []) if isinstance(item, dict)
+        }
+        seats = [
+            lifecycle_state(seat, previous.get(seat.get("seat_id")), current)
+            for seat in config.get("seats", [])
+        ]
         state = {**state, "seats": seats}
         status = evaluate(seats, snapshot, config, state, current)
         if state.get("active_trigger"):
             status["active_trigger"] = update_delivery(snapshot, state["active_trigger"])
             state["active_trigger"] = status["active_trigger"]
-        if status["state"] == "cooldown" and state.get("active_trigger", {}).get("delivery_state") in TERMINAL_DELIVERY:
+        if (
+            status["state"] == "cooldown"
+            and state.get("active_trigger", {}).get("delivery_state") in TERMINAL_DELIVERY
+        ):
             state["last_trigger_at"] = state["active_trigger"].get("created_at")
             state["active_trigger"] = None
         if status["state"] == "trigger_ready" and not state.get("active_trigger"):
             counter = int(state.get("trigger_count", 0)) + 1
             active = deliver_trigger(config, http, status, counter)
-            state.update(active_trigger=active, trigger_count=counter, last_trigger_at=active["created_at"])
+            state.update(
+                active_trigger=active, trigger_count=counter, last_trigger_at=active["created_at"]
+            )
             status["state"] = "trigger_pending"
             status["reason"] = "trigger_queued"
             status["active_trigger"] = active
@@ -302,7 +352,16 @@ def run_once(config: dict, state: dict) -> dict:
         return {"state": state, "status": status}
     except Exception as error:
         state = {**state, "updated_at": iso(current), "last_error": type(error).__name__}
-        return {"state": state, "status": {"schema_version": SCHEMA_VERSION, "observed_at": iso(current), "state": "unknown", "reason": type(error).__name__, "seats": state.get("seats", [])}}
+        return {
+            "state": state,
+            "status": {
+                "schema_version": SCHEMA_VERSION,
+                "observed_at": iso(current),
+                "state": "unknown",
+                "reason": type(error).__name__,
+                "seats": state.get("seats", []),
+            },
+        }
 
 
 def main() -> int:
@@ -321,9 +380,18 @@ def main() -> int:
             pass
     try:
         try:
-            state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.is_file() else {"schema_version": SCHEMA_VERSION, "trigger_count": 0, "active_trigger": None}
+            state = (
+                json.loads(state_path.read_text(encoding="utf-8"))
+                if state_path.is_file()
+                else {"schema_version": SCHEMA_VERSION, "trigger_count": 0, "active_trigger": None}
+            )
         except (OSError, ValueError):
-            state = {"schema_version": SCHEMA_VERSION, "trigger_count": 0, "active_trigger": None, "last_error": "state_invalid"}
+            state = {
+                "schema_version": SCHEMA_VERSION,
+                "trigger_count": 0,
+                "active_trigger": None,
+                "last_error": "state_invalid",
+            }
         while True:
             result = run_once(config, state)
             state = result["state"]

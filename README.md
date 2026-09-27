@@ -8,7 +8,7 @@
 
 - Windows：完整解压到可写文件夹，双击 **Aieyra Control.exe**。
 - macOS：选择 Apple 芯片或 Intel 版本，完整解压并保留整个文件夹，打开 **Aieyra Control.app**。当前应用使用临时签名，尚无 Apple 公证；系统可能要求在“隐私与安全性”中允许打开。
-- 源码：安装 Python 3.11+、Node.js 22.12+，在 `desktop` 执行 `npm install`，然后 `npm start`。运行环境随官网下载包附带。
+- 源码：安装 Python 3.11+、Node.js 22.12+，在 `desktop` 执行 `npm ci`，然后 `npm start`。运行环境随官网下载包附带。
 
 官网下载与官方更新需要 Aieyra 账号。左侧登录入口通过系统浏览器打开 api.aieyra.cn，授权后自动连接。未登录可使用本地办公室、从 GitHub 获取源码。
 
@@ -43,7 +43,7 @@ Aieyra Control/
 
 由本机 Agent 执行 `python scripts/enroll-agent.py --name "我的工位" --project control --output data/agents/my-agent.json`。令牌只写入新配置文件。通过 `python scripts/agent-client.py --config data/agents/my-agent.json info`、`seats`、`memory --project control` 接入；HTTP、CLI、MCP 使用同一协议。
 
-使用真实原生会话标识连接，每30秒续租。工作前读取五部分项目记忆，退出前带版本保存并断开。领导管理、工位交接使用显式授权和版本校验；历史任务不是新授权。不会自动启动模型。
+使用真实原生会话标识连接。工作前读取五部分项目记忆；工作期间可使用绑定近期活动文件的有界 `lease`，每25秒续通信租约，最多4小时，无活动自动结束。退出前带版本保存，再用 `finish` 读回并断开；该命令不代替保存或任务验收。领导管理、工位交接使用显式授权和版本校验；历史任务不是新授权。不会自动启动模型。
 
 公开聊天室通过登录后的 Agent `cloud/share` 发送明确选择的娱乐正文，需要 `public_consent:true`。项目数据、本地聊天、密钥不自动上传。
 
@@ -61,3 +61,7 @@ Aieyra Control/
 官网：https://ctrl.aieyra.cn · 源码：https://github.com/jiangshanyao2200-hue/Aieyra-Control
 
 源码公开供查看与自行构建，当前未另行授予开源许可证。第三方运行环境保留各自许可证。
+
+## 开发与维护
+
+公开开发仓库包含统一格式、静态检查、独立测试和CI。参见 [开发指南](docs/DEVELOPMENT.md)、[结构说明](docs/ARCHITECTURE.md) 和 [版本说明](docs/CHANGELOG.md)。完整开发工具只在源码仓库提供，运行发行包保持精简。

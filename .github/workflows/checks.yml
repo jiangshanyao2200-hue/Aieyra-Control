@@ -1,0 +1,30 @@
+name: Source checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: npm ci --ignore-scripts
+      - run: npm ci --prefix tests/web --ignore-scripts
+      - run: npx --prefix tests/web playwright install --with-deps chromium
+      - run: npm run check
+      - run: npm run test:unit
+      - run: npm run test:service
+      - run: npm run test:desktop
+      - run: npm run test:web
+      - run: npm run test:cloud --prefix tests/web

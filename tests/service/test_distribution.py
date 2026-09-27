@@ -1,0 +1,171 @@
+import http.client
+import json
+import threading
+import time
+import unittest
+from test_cloud import cloud, CloudTests
+
+
+class DistributionTests(CloudTests):
+    def setUp(self):
+        super().setUp()
+        self.server = cloud.BoundedServer(("127.0.0.1", 0), cloud.Handler)
+        self.server.app = self.app
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        release = self.app.data / "releases"
+        release.mkdir()
+        assets = self.app.data / "artifacts"
+        assets.mkdir()
+        self.path = "/artifacts/test-windows.zip"
+        (assets / "test-windows.zip").write_bytes(b"1234567890")
+        self.manifest = {
+            "manifest": {
+                "sequence": 1,
+                "portable": {"path": self.path, "size": 10, "sha256": "a" * 64},
+                "source": {"path": "/artifacts/source.zip", "size": 1, "sha256": "b" * 64},
+            }
+        }
+        (release / "stable.json").write_text(json.dumps(self.manifest))
+
+    def request(self, path, headers=None, body=None, method="GET"):
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=10)
+        try:
+            c.request(
+                method,
+                path,
+                body=json.dumps(body) if body is not None else None,
+                headers=headers or {},
+            )
+            r = c.getresponse()
+            return r.status, dict(r.getheaders()), r.read()
+        finally:
+            c.close()
+
+    def token(self):
+        return self.app.exchange(self.flow())["access_token"]
+
+    def test_anonymous_cannot_read_manifest_artifact_head_range_or_events(self):
+        for path in ("/v1/releases/stable", self.path, "/v1/releases/events"):
+            for method in ("GET", "HEAD"):
+                status, headers, _ = self.request(path, {"Range": "bytes=0-2"}, method=method)
+                self.assertEqual(status, 401)
+                self.assertEqual(headers["Cache-Control"], "no-store")
+
+    def test_authorized_range_then_revocation_blocks_cache_probe(self):
+        token = self.token()
+        headers = {"Authorization": "Bearer " + token, "Range": "bytes=2-4"}
+        status, h, raw = self.request(self.path, headers)
+        self.assertEqual((status, raw), (206, b"345"))
+        self.assertEqual(h["Cache-Control"], "private, no-store")
+        status, _, _ = self.request(
+            "/v1/auth/logout",
+            {"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+            body={},
+            method="POST",
+        )
+        self.assertEqual(status, 200)
+        headers["If-None-Match"] = '"' + "a" * 64 + '"'
+        self.assertEqual(self.request(self.path, headers)[0], 401)
+
+    def test_browser_cookie_is_httponly_token_not_returned_and_csrf_rejected(self):
+        status, h, raw = self.request(
+            "/v1/auth/exchange",
+            {"Origin": cloud.SITE, "Content-Type": "application/json"},
+            body=self.flow("browser"),
+            method="POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertNotIn("access_token", json.loads(raw))
+        cookie = h["Set-Cookie"]
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("Secure", cookie)
+        self.assertEqual(h["Access-Control-Allow-Credentials"], "true")
+        headers = {"Cookie": cookie.split(";")[0]}
+        self.assertEqual(self.request(self.path, headers)[0], 200)
+        self.assertEqual(
+            self.request(
+                "/v1/auth/logout",
+                {**headers, "Content-Type": "application/json"},
+                body={},
+                method="POST",
+            )[0],
+            403,
+        )
+        self.assertEqual(
+            self.request(
+                "/v1/auth/logout",
+                {**headers, "Origin": cloud.SITE, "Content-Type": "application/json"},
+                body={},
+                method="POST",
+            )[0],
+            200,
+        )
+        self.assertEqual(self.request(self.path, headers)[0], 401)
+
+    def test_update_stream_delivers_changes_and_closes_on_revocation(self):
+        token = self.token()
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=8)
+        self.addCleanup(c.close)
+        c.request("GET", "/v1/releases/events", headers={"Authorization": "Bearer " + token})
+        r = c.getresponse()
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.readline(), b"event: release\n")
+        self.assertIn(b'"sequence":1', r.readline())
+        r.readline()
+        self.manifest["manifest"]["sequence"] = 2
+        (self.app.data / "releases/stable.json").write_text(json.dumps(self.manifest))
+        deadline = time.monotonic() + 7
+        changed = False
+        while time.monotonic() < deadline:
+            line = r.readline()
+            if b'"sequence":2' in line:
+                changed = True
+                break
+        self.assertTrue(changed)
+        with self.app.db() as db:
+            db.execute("UPDATE sessions SET revoked=1 WHERE hash=?", (cloud.digest(token),))
+        self.assertIn(b"event: revoked", r.read())
+
+
+class PortablePathsTests(unittest.TestCase):
+    def test_project_references_accept_windows_and_macos_without_moving_files(self):
+        from coordination_core.library import validate
+        from coordination_core.core import Fault
+        from datetime import datetime, timezone
+
+        value = {
+            "id": "doc",
+            "title": "Doc",
+            "project": "control",
+            "owner": "owner",
+            "kind": "directory",
+            "summary": "Local reference",
+            "purpose": "Test",
+            "tags": [],
+            "source_ref": "/Users/example/Projects/product",
+            "provenance": "local",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "content_version": "1",
+            "sha256": None,
+            "bytes": None,
+            "status": "active",
+            "access": "shared",
+            "expires_at": None,
+            "task_id": "task",
+        }
+        for ref in (
+            "/Users/example/Projects/product",
+            "D:/Projects/product",
+            "D:\\Projects\\product",
+        ):
+            validate({**value, "source_ref": ref}, time.time())
+        for ref in ("relative/path", "/tmp/../private"):
+            with self.assertRaises(Fault):
+                validate({**value, "source_ref": ref}, time.time())
+
+
+if __name__ == "__main__":
+    unittest.main()

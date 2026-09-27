@@ -1,0 +1,13 @@
+{
+  "name": "aieyra-control-web-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node run-headless.mjs",
+    "test:live": "node run-headless.mjs --live",
+    "test:cloud": "node run-headless.mjs --cloud"
+  },
+  "devDependencies": {
+    "playwright": "1.55.1"
+  }
+}

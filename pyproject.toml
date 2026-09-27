@@ -1,0 +1,18 @@
+[tool.ruff]
+required-version = "==0.11.3"
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+  ".tools", ".release", ".publish", ".runtime", ".private", "data",
+  "docs/alpha", "docs/history", "scripts/alpha", "scripts/evidence", "scripts/messages",
+  "tests/web/evidence", "test-output", "service/coordination_core",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E402"] # Standalone scripts explicitly establish their local import root.
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

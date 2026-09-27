@@ -1,4 +1,5 @@
 """Explicitly registered engineering briefs, with source freshness checks."""
+
 import datetime as dt
 import hashlib
 import json
@@ -22,7 +23,11 @@ def read_brief(configuration):
     def reference(item):
         if not isinstance(item, dict):
             return {"freshness": "unknown"}
-        result = {key: item[key] for key in ("path", "line", "name", "sha256", "observed_at") if key in item}
+        result = {
+            key: item[key]
+            for key in ("path", "line", "name", "sha256", "observed_at")
+            if key in item
+        }
         result["freshness"] = "unknown"
         location = item.get("path")
         expected = item.get("sha256")
@@ -41,9 +46,24 @@ def read_brief(configuration):
             result["freshness"] = "unavailable"
         return result
 
-    result = {key: value[key] for key in ("schema_version", "project_id", "workstation_id", "observed_at", "scope", "coverage") if key in value}
-    result.update(source_ref=str(path), source_sha256=hashlib.sha256(raw).hexdigest(),
-                  checked_at=dt.datetime.now(dt.timezone.utc).isoformat(), features=[])
+    result = {
+        key: value[key]
+        for key in (
+            "schema_version",
+            "project_id",
+            "workstation_id",
+            "observed_at",
+            "scope",
+            "coverage",
+        )
+        if key in value
+    }
+    result.update(
+        source_ref=str(path),
+        source_sha256=hashlib.sha256(raw).hexdigest(),
+        checked_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+        features=[],
+    )
     for item in value["features"][:200]:
         if not isinstance(item, dict):
             continue
@@ -51,5 +71,7 @@ def read_brief(configuration):
         feature.update(source=reference(item.get("source")), test=reference(item.get("test")))
         result["features"].append(feature)
     result["verification_receipt"] = reference(value.get("verification_receipt"))
-    result["needs_coordination"] = [v[:2000] for v in value.get("needs_coordination", [])[:30] if isinstance(v, str)]
+    result["needs_coordination"] = [
+        v[:2000] for v in value.get("needs_coordination", [])[:30] if isinstance(v, str)
+    ]
     return result
