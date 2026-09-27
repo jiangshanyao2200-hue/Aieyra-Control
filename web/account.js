@@ -39,6 +39,7 @@ export function createAccountPanel({ request, onChange }) {
     candidate = verified(candidate);
     if (!candidate.enabled) throw Error('invalid_account');
     value = candidate;
+    if (url) void window.controlPlatform?.finishLogin?.().catch(() => {});
     stop();
     refreshGeneration++;
     url = '';
@@ -61,7 +62,7 @@ export function createAccountPanel({ request, onChange }) {
         url = value.authorize_url;
         expires = expiry(value.expires_in);
         if (pollTimer === null) pollTimer = setTimeout(() => poll(actionId), 1500);
-        if (!message) message = '在浏览器完成登录后将自动连接。';
+        if (!message) message = '在登录窗口完成授权后将自动连接。';
       } else if (!url) message = '';
     } catch {
       if (actionId !== generation || readId !== refreshGeneration) return;
@@ -87,7 +88,7 @@ export function createAccountPanel({ request, onChange }) {
         return;
       }
       failures = 0;
-      message = '在浏览器完成登录后将自动连接。';
+      message = '在登录窗口完成授权后将自动连接。';
       onChange();
     } catch (error) {
       if (id !== generation) return;
@@ -127,12 +128,13 @@ export function createAccountPanel({ request, onChange }) {
     onChange();
     try {
       if (name === 'login') {
+        await window.controlPlatform?.prepareLogin?.();
         const result = await request('/api/cloud/login', {});
         if (id !== generation) return;
         if (!validLink(result.authorize_url)) throw Error('invalid_link');
         url = result.authorize_url;
         expires = expiry(result.expires_in);
-        message = '在浏览器完成登录后将自动连接。';
+        message = '在登录窗口完成授权后将自动连接。';
         pollTimer = setTimeout(() => poll(id), 1500);
         let opened = false;
         try {
@@ -145,7 +147,7 @@ export function createAccountPanel({ request, onChange }) {
           }
         } catch {}
         if (id !== generation) return;
-        if (!opened) message = '请点击“继续登录”打开浏览器，完成后将自动连接。';
+        if (!opened) message = '请点击“继续登录”打开登录页，完成后将自动连接。';
       } else {
         await request('/api/cloud/' + name, {});
         if (id !== generation) return;
@@ -160,6 +162,7 @@ export function createAccountPanel({ request, onChange }) {
     } catch {
       if (id !== generation) return;
       message = '暂未完成，请重试。';
+      if (name === 'login') void window.controlPlatform?.loginFailed?.().catch(() => {});
     } finally {
       popup?.close();
       if (id === generation) {

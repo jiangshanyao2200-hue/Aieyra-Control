@@ -8,6 +8,7 @@ const {
   ipcMain,
   shell,
   Notification,
+  session,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -18,7 +19,7 @@ const { HumanNotificationHost } = require('./human-notification-host.cjs');
 const { HumanRequestFeed } = require('./human-request-feed.cjs');
 const { OSOwnerPipe, validOwnerPipeName } = require('./os-owner-pipe.cjs');
 const { installationPaths, prepareDirectories } = require('./paths.cjs');
-const { openLogin } = require('./login.cjs');
+const { LoginWindow, validLoginUrl } = require('./login.cjs');
 const root = path.resolve(__dirname, '..');
 const installation = installationPaths({ packaged: app.isPackaged, source: root });
 try {
@@ -37,6 +38,7 @@ const args = process.argv.slice(1);
 const option = (name) =>
   args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
 const testing = process.env.AIEYRA_CONTROL_PLATFORM_TEST === '1';
+const loginWindow = new LoginWindow({ BrowserWindow, session, hidden: testing });
 const osManaged = args.includes('--os-managed');
 const ownerStdin = args.includes('--os-owner-stdin');
 const ownerPipeName = option('os-owner-pipe');
@@ -257,7 +259,8 @@ function createWindow() {
   );
   current.webContents.session.setPermissionCheckHandler(() => false);
   current.webContents.setWindowOpenHandler(({ url }) => {
-    openExternal(url);
+    if (validLoginUrl(url)) loginWindow.open(url, current);
+    else openExternal(url);
     return { action: 'deny' };
   });
   current.webContents.on('will-navigate', (event, url) => {
@@ -387,6 +390,7 @@ else {
     if (cleaned) return;
     event.preventDefault();
     humanHost?.stop();
+    loginWindow.close();
     humanFeed?.stop();
     ownerPipe?.stop();
     cleanup ||= supervisor.stop().finally(() => {
@@ -420,8 +424,17 @@ else {
       changed: updateMenus,
     });
     ipcMain.handle('control:status', (event) => (trusted(event) ? status() : null));
+    ipcMain.handle('control:prepare-login', (event) =>
+      trusted(event) ? loginWindow.prepare(window) : false,
+    );
     ipcMain.handle('control:open-login', (event, url) =>
-      trusted(event) ? openLogin(url, shell) : false,
+      trusted(event) ? loginWindow.open(url, window) : false,
+    );
+    ipcMain.handle('control:login-failed', (event) => {
+      if (trusted(event)) loginWindow.fail();
+    });
+    ipcMain.handle('control:finish-login', (event) =>
+      trusted(event) ? loginWindow.close(true) : false,
     );
     ipcMain.handle('control:retry', (event) => {
       if (trusted(event)) supervisor.retry();

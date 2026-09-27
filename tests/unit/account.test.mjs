@@ -9,10 +9,12 @@ function fixture(t, request, platform = true) {
     timers = [];
   if (platform)
     window.controlPlatform = {
+      prepareLogin: async () => {},
       openLogin: async (url) => {
         opened.push(url);
         return true;
       },
+      finishLogin: async () => {},
     };
   t.mock.method(globalThis, 'setTimeout', (fn) => {
     timers.push(fn);
@@ -77,6 +79,7 @@ test('browser popup is reserved synchronously and cleared on start failure', asy
   window.open = () => popup;
   const pending = panel.action('login');
   assert.equal(popup.opener, null);
+  await Promise.resolve();
   rejectStart(Error('offline'));
   await pending;
   assert.equal(closed, true);

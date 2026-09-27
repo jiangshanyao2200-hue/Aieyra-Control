@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     status: () => ipcRenderer.invoke('control:status'),
     openLogin: (url) => ipcRenderer.invoke('control:open-login', url),
+    prepareLogin: () => ipcRenderer.invoke('control:prepare-login'),
+    loginFailed: () => ipcRenderer.invoke('control:login-failed'),
+    finishLogin: () => ipcRenderer.invoke('control:finish-login'),
     retry: () => ipcRenderer.invoke('control:retry'),
     background: (enabled) => ipcRenderer.invoke('control:background', Boolean(enabled)),
     quit: () => ipcRenderer.invoke('control:quit'),
