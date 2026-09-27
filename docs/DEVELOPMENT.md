@@ -13,6 +13,8 @@ npx --prefix tests/web playwright install chromium
 
 Run `npm run test:unit`, `npm run test:service` and `npm run test:desktop`. Agent integration starts an isolated copy of the included office engine, with temporary databases and random loopback ports; it does not require a neighboring checkout. An optional `AIEYRA_CENTER_SOURCE` selects an external compatible engine for integration work.
 
+`test_agent_station.py` adds real HTTP lifecycle, concurrent recovery, vendor hook/config preservation, lost-response and bounded child-process checks. It does not call a model. Follow `AGENT_ADAPTERS.md` to test host installation separately; report configured, host-recognized and actual model-session verification as distinct results.
+
 Run `npm run test:web` and `npm run test:cloud --prefix tests/web` under Linux or WSL without a desktop display or audio. `CONTROL_CHROME` may point to installed Linux Chromium; `CONTROL_HEADLESS_LIBS` may supply isolated libraries. `CONTROL_TEST_OUTPUT` selects a fresh evidence directory; by default each run gets a timestamped directory under `tests/test-output`. Never overwrite historical evidence. Current public CI runs these isolated checks; real login, platform packages and live deployments need separate verification.
 
 Install desktop runtime dependencies with `npm ci --prefix desktop`, then `npm start --prefix desktop`. Configuration and state are created under the installation's `data/`. Current UI shows workstation status and opens task/chat/account dialogs; it has no administrative editor.

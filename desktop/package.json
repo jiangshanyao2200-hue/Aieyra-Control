@@ -1,6 +1,6 @@
 {
   "name": "aieyra-control-desktop",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "description": "Aieyra Control desktop lifecycle host",
   "main": "main.cjs",
@@ -8,6 +8,11 @@
     "start": "electron .",
     "test": "node --test test/supervisor.test.cjs ../tests/desktop-notifications/*.test.cjs"
   },
-  "engines": { "node": ">=22.12" },
-  "devDependencies": { "electron": "42.6.1", "playwright": "1.58.2" }
+  "engines": {
+    "node": ">=22.12"
+  },
+  "devDependencies": {
+    "electron": "42.6.1",
+    "playwright": "1.58.2"
+  }
 }

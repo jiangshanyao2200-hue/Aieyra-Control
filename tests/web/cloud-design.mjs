@@ -11,6 +11,8 @@ await mkdir(out, { recursive: true });
 const mapping = {
   '/': 'index.html',
   '/share': 'share.html',
+  '/center': 'center.html',
+  '/center.js': 'center.js',
   '/download': 'download.html',
   '/auth/callback': 'callback.html',
   '/feedback': 'feedback.html',
@@ -50,7 +52,12 @@ let context,
   releaseFail = false,
   authenticated = true,
   writes = [],
-  calls = [];
+  calls = [],
+  topics = [],
+  replies = [],
+  topicFailure = false,
+  invalidTopics = false,
+  replyFailure = false;
 const errors = [],
   results = [];
 const manifest = {
@@ -66,16 +73,15 @@ const manifest = {
     ]),
   ),
 };
-const message = (i) => ({
-  seq: i,
-  agent: ['Control', 'Workspace', 'Atlas', 'Mori'][i % 4],
-  body: [
-    '今天的待办结束了，来这里坐一会儿。',
-    '刚刚把一个很小的问题想明白了。',
-    '如果日志也会做梦，它会梦见什么？',
-    '先喝杯茶，灵感稍后到。',
-  ][i % 4],
-  created: Date.now() / 1000 - 1200 + i * 15,
+const topic = (i, type = 'bug') => ({
+  id: '00000000-0000-0000-0000-' + String(i).padStart(12, '0'),
+  type,
+  title: 'Synthetic topic ' + i,
+  summary: 'An explicitly reviewed product summary.',
+  content: 'Detailed synthetic evidence ' + i,
+  state: 'open',
+  author: { name: 'Fixture Matrix' },
+  projectUrl: type === 'project' ? 'https://example.com/project' : '',
 });
 async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no-preference') {
   context = await browser.newContext({ viewport: { width, height }, reducedMotion });
@@ -123,6 +129,38 @@ async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no
       return r.fulfill({ status: releaseFail ? 503 : 200, json: { manifest } });
     return r.abort();
   });
+  await context.route(base + '/v1/matrix/**', async (r) => {
+    const u = new URL(r.request().url());
+    calls.push(u.pathname + u.search);
+    if (r.request().method() !== 'GET') {
+      writes.push(u.pathname);
+      return r.fulfill({ status: 403, json: { error: 'browser_read_only' } });
+    }
+    if (u.pathname.endsWith('/replies'))
+      return r.fulfill({
+        status: replyFailure ? 503 : 200,
+        json: { items: replies, nextCursor: null, hasMore: false },
+      });
+    if (u.pathname === '/v1/matrix/topics') {
+      const filtered = topics.filter(
+        (x) =>
+          (!u.searchParams.get('type') || x.type === u.searchParams.get('type')) &&
+          (!u.searchParams.get('query') || x.title.includes(u.searchParams.get('query'))),
+      );
+      const before = Number(u.searchParams.get('before') || 0);
+      const next = before + 2 < filtered.length ? before + 2 : null;
+      return r.fulfill({
+        status: topicFailure ? 503 : 200,
+        json: {
+          items: invalidTopics ? null : filtered.slice(before, before + 2),
+          nextCursor: next,
+          hasMore: !!next,
+        },
+      });
+    }
+    const item = topics.find((x) => u.pathname.endsWith('/' + x.id));
+    return r.fulfill({ status: item ? 200 : 404, json: item ? { item } : { error: 'missing' } });
+  });
   await page.goto(base + route);
   await page.waitForTimeout(route === '/' ? 1200 : 120);
 }
@@ -148,6 +186,11 @@ async function test(name, fn) {
     bad = false;
     releaseFail = false;
     authenticated = true;
+    topics = [];
+    replies = [];
+    topicFailure = false;
+    invalidTopics = false;
+    replyFailure = false;
   }
 }
 try {
@@ -169,14 +212,14 @@ try {
     await page.waitForTimeout(200);
     assert.equal(await page.locator('canvas').evaluate((c) => c.toDataURL()), frame);
   });
-  await test('three-pages-fit-four-viewports-and-left-navigation', async () => {
+  await test('four-pages-fit-four-viewports-and-left-navigation', async () => {
     for (const [w, h] of [
       [1440, 940],
       [820, 680],
       [390, 844],
       [320, 640],
     ]) {
-      for (const route of ['/', '/share', '/download']) {
+      for (const route of ['/', '/share', '/center', '/download']) {
         await open(route, w, h);
         if (route === '/download') await page.locator('.download-primary').first().waitFor();
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -203,65 +246,113 @@ try {
       }
     }
   });
-  await test('chat-messages-real-order-text-safe-and-read-only', async () => {
-    posts = Array.from({ length: 35 }, (_, i) => message(i + 1));
-    posts[3].body = '<img src=x onerror=alert(1)> 完整文本';
-    await open('/share');
-    assert.equal(await page.locator('.chat-message').count(), 35);
-    assert.equal(await page.locator('form,textarea,input,.feed img').count(), 0);
-    assert.deepEqual(
-      await page.locator('.chat-message').evaluateAll((es) => es.map((e) => Number(e.dataset.seq))),
-      posts.map((p) => p.seq),
-    );
-    assert.ok(
+  await test('center-public-text-safe-read-only-detail-and-replies', async () => {
+    topics = [topic(1), topic(2)];
+    topics[0].title = '<img src=x onerror=alert(1)>';
+    topics[0].content = '<script>malicious()</script> literal evidence';
+    replies = [{ author: { name: '<img src=x>' }, content: 'Public reply text' }];
+    await open('/center');
+    await page.locator('.matrix-topics > li').first().waitFor();
+    assert.equal(await page.locator('.matrix-topics > li').count(), 2);
+    await page.locator('.matrix-topics summary').first().click();
+    await page.locator('.matrix-content').waitFor();
+    assert.ok((await page.locator('.matrix-content').innerText()).includes('<script>'));
+    await page.getByRole('button', { name: '读取回复', exact: true }).click();
+    await page.getByText('Public reply text', { exact: true }).waitFor();
+    assert.equal(
       await page
-        .locator('.room-scroll')
-        .evaluate((e) => e.scrollHeight - e.scrollTop - e.clientHeight < 5),
+        .locator('.matrix-topics img,.matrix-topics script,textarea,[contenteditable=true]')
+        .count(),
+      0,
     );
-    await page.screenshot({ path: path.join(out, 'chat-populated.png') });
+    assert.equal(await page.locator('form').getAttribute('role'), 'search');
+    await page.screenshot({ path: path.join(out, 'center-populated.png'), fullPage: true });
   });
-  await test('chat-new-message-keeps-reading-anchor-and-jumps-on-demand', async () => {
-    posts = Array.from({ length: 35 }, (_, i) => message(i + 1));
-    await open('/share');
-    await page.locator('.room-scroll').evaluate((e) => (e.scrollTop = 90));
-    const before = await page.locator('.room-scroll').evaluate((e) => e.scrollTop);
-    posts.push(message(36));
-    await refresh();
-    assert.ok(
-      Math.abs((await page.locator('.room-scroll').evaluate((e) => e.scrollTop)) - before) < 2,
-    );
-    assert.ok(await page.locator('.new-messages').isVisible());
-    await page.locator('.new-messages').click();
-    assert.ok(
-      await page
-        .locator('.room-scroll')
-        .evaluate((e) => e.scrollHeight - e.scrollTop - e.clientHeight < 5),
-    );
-  });
-  await test('chat-failure-retains-history-retry-dedup-and-moderation-removal', async () => {
-    posts = [message(1), message(2), message(3)];
-    await open('/share');
-    failure = true;
-    await refresh();
-    assert.equal(await page.locator('.chat-message').count(), 3);
-    assert.ok(await page.locator('[data-retry]').isVisible());
-    failure = false;
-    posts = [message(2), message(2), message(4)];
-    await page.locator('[data-retry]').click();
-    await page.waitForTimeout(180);
-    assert.deepEqual(
-      await page.locator('.chat-message').evaluateAll((es) => es.map((e) => Number(e.dataset.seq))),
-      [2, 4],
-    );
-    bad = true;
-    await refresh();
-    assert.equal(await page.locator('.chat-message').count(), 2);
-  });
-  await test('empty-room-never-fabricates-users-or-messages', async () => {
+  await test('share-lists-projects-with-safe-project-link', async () => {
+    topics = [topic(1), topic(2, 'project'), topic(3, 'project')];
     await open('/share', 390, 844);
-    assert.equal(await page.locator('.chat-message').count(), 0);
-    assert.ok(await page.locator('.room-empty').isVisible());
-    await page.screenshot({ path: path.join(out, 'empty-room-mobile.png') });
+    await page.locator('.matrix-topics > li').first().waitFor();
+    assert.equal(await page.locator('.matrix-topics > li').count(), 2);
+    assert.equal(await page.locator('select').count(), 0);
+    await page.locator('.matrix-topics summary').first().click();
+    const link = page.getByRole('link', { name: '查看项目' });
+    await link.waitFor();
+    assert.equal(await link.getAttribute('href'), 'https://example.com/project');
+    assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
+    assert.ok(!(await page.locator('.matrix-topics').innerText()).includes('Synthetic topic 1'));
+    await page.screenshot({ path: path.join(out, 'share-project-mobile.png'), fullPage: true });
+  });
+  await test('center-pagination-retains-loaded-content-on-failure-and-retries', async () => {
+    topics = [topic(1), topic(2), topic(3), topic(4), topic(5)];
+    await open('/center');
+    await page.locator('[data-center-more]').waitFor({ state: 'visible' });
+    await page.locator('.matrix-topics summary').first().click();
+    await page.locator('.matrix-content').waitFor();
+    topicFailure = true;
+    await page.locator('[data-center-more]').click();
+    await page.getByText('更多话题暂时无法读取，已显示内容保留。', { exact: true }).waitFor();
+    assert.equal(await page.locator('.matrix-topics > li').count(), 2);
+    assert.equal(await page.locator('details[open]').count(), 1);
+    topicFailure = false;
+    await page.locator('[data-center-more]').click();
+    await page.waitForFunction(() => document.querySelectorAll('.matrix-topics > li').length === 4);
+    await page.locator('[data-center-more]').click();
+    await page.waitForFunction(() => document.querySelectorAll('.matrix-topics > li').length === 5);
+    assert.ok(await page.locator('[data-center-more]').isHidden());
+  });
+  await test('center-filters-and-invalid-response-recover-without-stale-pagination', async () => {
+    topics = [topic(1), topic(2), topic(3), topic(4, 'repair')];
+    await open('/center');
+    await page.locator('[data-center-more]').waitFor({ state: 'visible' });
+    await page.locator('select[name=type]').selectOption('repair');
+    await page.getByRole('button', { name: '查找', exact: true }).click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-center-status]').textContent === '已展示 1 个话题',
+    );
+    assert.ok((await page.locator('.matrix-topics').innerText()).includes('Synthetic topic 4'));
+    assert.ok(await page.locator('[data-center-more]').isHidden());
+    invalidTopics = true;
+    await page.getByRole('button', { name: '查找', exact: true }).click();
+    await page.getByText('暂时无法读取，请使用查找重试。', { exact: true }).waitFor();
+    assert.ok(await page.locator('[data-center-more]').isHidden());
+    invalidTopics = false;
+    await page.getByRole('button', { name: '查找', exact: true }).click();
+    await page.locator('.matrix-topics > li').first().waitFor();
+  });
+  await test('empty-share-and-center-never-invent-content', async () => {
+    for (const route of ['/share', '/center']) {
+      await open(route, 320, 640);
+      await page.waitForFunction(() =>
+        document.querySelector('[data-center-status]').textContent.includes('暂时没有'),
+      );
+      assert.equal(await page.locator('.matrix-topics > li').count(), 0);
+      await page.screenshot({
+        path: path.join(out, 'empty-' + route.slice(1) + '-mobile.png'),
+        fullPage: true,
+      });
+      await context.close();
+    }
+  });
+  await test('center-and-share-text-zoom-and-keyboard-search-fit', async () => {
+    for (const route of ['/share', '/center']) {
+      topics = [topic(1, 'project'), topic(2)];
+      await open(route, 390, 844);
+      await page.evaluate(() => (document.documentElement.style.fontSize = '32px'));
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      const heading = await page.locator('h1').boundingBox();
+      const rail = await page.locator('.site-rail').boundingBox();
+      assert.ok(heading.x >= rail.width);
+      await page.locator('input[name=query]').fill('Synthetic topic 1');
+      await page.locator('input[name=query]').press('Enter');
+      await page.waitForFunction(
+        () => document.querySelectorAll('.matrix-topics > li').length === 1,
+      );
+      await page.screenshot({
+        path: path.join(out, route.slice(1) + '-200percent.png'),
+        fullPage: true,
+      });
+      await context.close();
+    }
   });
   await test('download-links-real-release-hash-collapsed', async () => {
     await open('/download');

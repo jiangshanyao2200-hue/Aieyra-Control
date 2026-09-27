@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "service"))
 from feedback_store import FeedbackStore
 from feedback_contract import FeedbackError
+from matrix_store import MatrixStore, public_key
 
 SITE = "https://ctrl.aieyra.cn"
 CLOUD = "https://ctrlupdate.aieyra.cn"
@@ -60,7 +61,7 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-class Cloud(FeedbackStore):
+class Cloud(FeedbackStore, MatrixStore):
     def __init__(self, data, identity=None):
         self.data = Path(data)
         self.data.mkdir(parents=True, exist_ok=True)
@@ -75,6 +76,7 @@ class Cloud(FeedbackStore):
             CREATE TABLE IF NOT EXISTS blocked(subject TEXT PRIMARY KEY,reason TEXT NOT NULL);
             """)
         self.init_feedback()
+        self.init_matrix()
         self.rate_lock = threading.Lock()
         self.rate_buckets = {}
         self.connection_counts = {}
@@ -142,8 +144,14 @@ class Cloud(FeedbackStore):
             d.execute("DELETE FROM limits WHERE start<?", (now - 86400,))
 
     def start(self, b):
-        if set(b) != {"challenge", "redirect_uri", "scope", "state"}:
+        if set(b) not in (
+            {"challenge", "redirect_uri", "scope", "state"},
+            {"challenge", "redirect_uri", "scope", "state", "public_key"},
+        ):
             raise Error("invalid_login_fields")
+        key = public_key(b["public_key"]) if "public_key" in b else None
+        if key and b["scope"] != "desktop":
+            raise Error("matrix_native_agent_required", 403)
         check(b["challenge"], r"[A-Za-z0-9_-]{43}")
         check(b["state"])
         if b["redirect_uri"] not in CALLBACKS or b["scope"] not in ("browser", "desktop"):
@@ -151,6 +159,7 @@ class Cloud(FeedbackStore):
         flow = secrets.token_urlsafe(32)
         with self.db() as d:
             d.execute("DELETE FROM flows WHERE expires<?", (time.time() - 300,))
+            d.execute("DELETE FROM matrix_flow_keys WHERE flow NOT IN (SELECT id FROM flows)")
             d.execute(
                 "INSERT INTO flows(id,challenge,redirect,scope,state,expires) VALUES(?,?,?,?,?,?)",
                 (
@@ -162,6 +171,8 @@ class Cloud(FeedbackStore):
                     time.time() + 300,
                 ),
             )
+            if key:
+                d.execute("INSERT INTO matrix_flow_keys VALUES(?,?)", (flow, key))
         return {
             "flow_id": flow,
             "authorize_url": API + "/aieyra/control/authorize?flow=" + flow,
@@ -222,6 +233,10 @@ class Cloud(FeedbackStore):
                 "INSERT INTO sessions VALUES(?,?,?,?,?,0)",
                 (digest(token), who["subject"], who["name"], r["scope"], expires),
             )
+            d.execute(
+                "INSERT INTO matrix_session_keys SELECT ?,public_key FROM matrix_flow_keys WHERE flow=?",
+                (digest(token), r["id"]),
+            )
         return {"access_token": token, "expires_at": expires, "user": who, "scope": r["scope"]}
 
     def poll(self, b):
@@ -252,6 +267,10 @@ class Cloud(FeedbackStore):
             d.execute(
                 "INSERT INTO sessions VALUES(?,?,?,?,?,0)",
                 (digest(token), who["subject"], who["name"], "desktop", expires),
+            )
+            d.execute(
+                "INSERT INTO matrix_session_keys SELECT ?,public_key FROM matrix_flow_keys WHERE flow=?",
+                (digest(token), r["id"]),
             )
         return {"access_token": token, "expires_at": expires, "user": who, "scope": "desktop"}
 
@@ -652,18 +671,26 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     raise Error("json_required", 415)
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 8192:
+                if not 0 < length <= (65536 if path.startswith("/v1/matrix/") else 8192):
                     raise Error("body_limit", 413)
-                b = json.loads(self.rfile.read(length))
+                raw = self.rfile.read(length)
+                b = json.loads(raw)
                 if not isinstance(b, dict):
                     raise Error("invalid_json")
                 if path == "/v1/auth/start":
+                    if "public_key" in b and (
+                        self.headers.get("Origin") or self.headers.get("Sec-Fetch-Site")
+                    ):
+                        raise Error("matrix_native_agent_required", 403)
                     return self.respond(200, app.start(b))
                 if path == "/v1/auth/exchange":
                     return self.login_response(app.exchange(b))
                 if path == "/v1/auth/poll":
                     return self.respond(200, app.poll(b))
                 session = app.session(self.token())
+                if path.startswith("/v1/matrix/"):
+                    app.matrix_proof(session, path, raw, self.headers)
+                    return self.respond(200, app.matrix_write(session, path, b))
                 if path == "/v1/feedback/channel":
                     return self.respond(200, app.feedback_channel(session, b))
                 if path == "/v1/feedback":
@@ -683,7 +710,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200, app.post(session, b))
                 raise Error("not_found", 404)
             if path == "/healthz":
-                return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.2"})
+                return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.3"})
+            if path.startswith("/v1/matrix/"):
+                session = (
+                    app.session(self.token())
+                    if path in ("/v1/matrix/status", "/v1/matrix/events")
+                    else None
+                )
+                return self.respond(200, app.matrix_read(path, parse_qs(url.query), session))
             if path == "/v1/feedback" or path.startswith("/v1/feedback/"):
                 session = app.session(self.token())
                 return self.respond(
@@ -729,6 +763,8 @@ class Handler(BaseHTTPRequestHandler):
                 "/download": "download.html",
                 "/auth/callback": "callback.html",
                 "/feedback": "feedback.html",
+                "/center": "center.html",
+                "/center.js": "center.js",
                 "/feedback.js": "feedback.js",
                 "/style.css": "style.css",
                 "/site.js": "site.js",

@@ -580,7 +580,19 @@ server.serve_forever()
         results = [json.loads(line) for line in output.getvalue().splitlines()]
         self.assertEqual(len(results), 3)
         self.assertEqual(results[0]["result"]["protocolVersion"], "2025-11-25")
-        self.assertEqual(len(results[1]["result"]["tools"]), 14)
+        tool_names = [t["name"] for t in results[1]["result"]["tools"]]
+        self.assertEqual(len(tool_names), 19)
+        self.assertEqual(len(set(tool_names)), len(tool_names))
+        self.assertTrue(
+            {
+                "aieyra_matrix_read",
+                "aieyra_matrix_sync",
+                "aieyra_matrix_publish",
+                "aieyra_growth_status",
+                "aieyra_growth_record",
+            }
+            <= set(tool_names)
+        )
         self.assertTrue(
             {"aieyra_feedback", "aieyra_feedback_status", "aieyra_feedback_cancel"}
             <= {t["name"] for t in results[1]["result"]["tools"]}

@@ -85,6 +85,22 @@ def smoke(root, mac=False):
                 if not (temporary / "data/shared/office.sqlite").exists():
                     raise RuntimeError("shared_data_missing")
                 print("PASS packaged Python, SQLite, read APIs and portable storage", flush=True)
+                proof = subprocess.run(
+                    [
+                        str(python),
+                        "-c",
+                        "import sys;sys.path.insert(0,sys.argv[1]);import matrix_proof;k=matrix_proof.run({'action':'generate'});s=matrix_proof.run({'action':'sign','privateKey':k['privateKey'],'message':'packaged-native-fixture'});assert len(s['signature'])==86;print('PASS packaged Matrix signing')",
+                        str(root / "service"),
+                    ],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=25,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                if proof.returncode:
+                    raise RuntimeError("packaged_matrix_signing_failed")
+                print(proof.stdout.strip(), flush=True)
             finally:
                 process.terminate()
                 process.wait(timeout=15)

@@ -48,10 +48,11 @@ from project_memory import ProjectMemory, MemoryError
 from cloud_link import CloudLink, CloudError
 from cloud_session import SessionVault
 from feedback import Feedback, FeedbackError
+from growth import Growth
 from local_hub import create_local_hub
 from paths import shared_directory, configuration_file, initialize as initialize_paths
 
-VERSION = "0.6.2"
+VERSION = "0.6.3"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -110,6 +111,7 @@ class Application:
         self.store = Store(data_dir / "control.sqlite")
         self.store.recover()
         self.feedback = Feedback(self)
+        self.growth = Growth(self)
         self.os_sessions = OSSessions(config, data_dir, ROOT, self.store)
         self.collaboration = Projection(
             self.store, config, source_provider=self.os_sessions.sources
@@ -854,6 +856,8 @@ class Handler(BaseHTTPRequestHandler):
             }
         if path == "cloud/status":
             return self.server.app.cloud.status()
+        if path == "cloud/growth":
+            return self.server.app.growth.status(peer)
         if path == "cloud/community":
             return self.server.app.cloud.call("/v1/community")
         if path == "cloud/feedback":

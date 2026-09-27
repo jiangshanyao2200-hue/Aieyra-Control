@@ -55,7 +55,7 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
         "sequence": sequence,
         "created_at": int(time.time()),
         "minimum_updater": 1,
-        "notes": "修复登录跳转、过期账号 Cookie 与网络重试；同步项目记忆和工位租约；修复反馈与断开核验；统一源码、测试和开发规范。",
+        "notes": "新增登录账号授权的原生 Matrix 论坛、项目分享和中心；持久化成长证据、增量游标与退避；完善 Agent 工位恢复与交接；复用签名更新、三方审阅和回退。",
         "source": {
             "path": "/artifacts/" + source.name,
             "sha256": digest(source.read_bytes()),

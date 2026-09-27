@@ -92,6 +92,48 @@ def discover(config, runner=subprocess.run):
     else:
         os_row.update(availability="unavailable", reason="未提供公开、受控的 Aieyra OS 适配器端点")
     rows.append(os_row)
+    for name, label in (("claude", "Claude Code"), ("cursor", "Cursor")):
+        row = {
+            "id": "local-" + name,
+            "name": label,
+            "kind": name,
+            "source": "configured executable",
+            "actions": ["inspect"],
+            "observed_at": stamp,
+            "availability": "unavailable",
+            "version_label": "",
+            "reason": "未配置可核实的可执行文件",
+            "adapter": {
+                "tools": "mcp_stdio",
+                "lifecycle": "project_hooks",
+                "installer": "scripts/agent-station.py",
+                "execution_control": False,
+                "automatic_wakeup": False,
+                "configuration_verified": False,
+            },
+        }
+        executable = config.get(name + "_executable")
+        if isinstance(executable, str) and 0 < len(executable) <= 1024:
+            path = Path(executable)
+            try:
+                if not path.is_absolute() or not path.is_file():
+                    raise OSError("executable_missing")
+                result = runner(
+                    [str(path), "--version"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                version = (result.stdout or "").strip().splitlines()
+                if result.returncode != 0 or not version:
+                    raise ValueError("version_unavailable")
+                row.update(availability="available", version_label=version[0][:120], reason="")
+            except (OSError, ValueError, subprocess.SubprocessError):
+                row["reason"] = "配置的客户端可执行文件不可核实"
+        rows.append(row)
     return {
         "schema_version": 1,
         "observed_at": stamp,

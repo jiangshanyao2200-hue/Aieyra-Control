@@ -82,6 +82,25 @@ class AgentClientTests(unittest.TestCase):
         self.assertEqual([r for r, _ in calls], ["heartbeat"])
         self.assertNotIn("runtime_state", calls[-1][1])
 
+    def test_idle_mcp_process_does_not_keep_station_online_forever(self):
+        client = self.client()
+        client.keepalive_interval = 0.001
+        client._sessions.add("session-one")
+        client._activity["session-one"] = (0, 0)
+        calls = []
+
+        def call(route, body=None):
+            calls.append((route, body))
+            client._stop.set()
+            return {"session": {"state": "disconnected"}}
+
+        client.call = call
+        thread = threading.Thread(target=client._keepalive)
+        thread.start()
+        thread.join(1)
+        self.assertEqual([r for r, _ in calls], ["disconnect"])
+        self.assertFalse(client._sessions)
+
     def test_response_limit_declared_length_and_invalid_session(self):
         for raw, declared in ((b"{}", "9"), (b" " * (8 * 1024 * 1024 + 1), None)):
             with self.subTest(declared=declared):

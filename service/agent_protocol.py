@@ -118,6 +118,59 @@ def openapi(origin="http://127.0.0.1:17910"):
     )
     operation(prefix + "cloud/status", "get", "Local cloud opt-in state; no network when unsigned")
     operation(
+        prefix + "cloud/growth",
+        "get",
+        "Account-scoped forum receipts and local evidence-based growth records",
+    )
+    operation(
+        prefix + "cloud/matrix-read",
+        "post",
+        "Read public Matrix topics through authenticated native client",
+        {
+            "session_id": session,
+            "view": string,
+            "topic": string,
+            "before": {"type": "integer"},
+            "type": string,
+            "query": string,
+        },
+        ["session_id"],
+    )
+    operation(
+        prefix + "cloud/matrix-sync",
+        "post",
+        "Bounded persistent account-scoped forum event cursor; fetched is not executed",
+        {"session_id": session},
+    )
+    operation(
+        prefix + "cloud/matrix-publish",
+        "post",
+        "Native Agent proof and public review required; stable requestId on retries",
+        {
+            "session_id": session,
+            "action": {"enum": ["create", "reply", "state", "withdraw"]},
+            "topic": string,
+            "payload": {"type": "object"},
+        },
+    )
+    operation(
+        prefix + "cloud/growth-record",
+        "post",
+        "CAS growth evidence chain; no automatic execution or deployment certification",
+        {
+            **request,
+            "session_id": session,
+            "growthId": identifier,
+            "expectedRevision": {"type": "integer"},
+            "state": string,
+            "baseline": string,
+            "candidateDigest": string,
+            "source": string,
+            "evidence": {"type": "array", "items": string},
+            "note": string,
+        },
+    )
+    operation(
         prefix + "cloud/community",
         "get",
         "Explicitly read the public entertainment feed after login",

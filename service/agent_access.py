@@ -729,6 +729,20 @@ class AgentAccess:
                 }
             )
         cloud = self.app.cloud.status()
+        notices.append(
+            {
+                "kind": "growth_intelligence",
+                "protocol": "aieyra-growth/1",
+                "action": "inspect_relevant_events_and_report_verified_product_findings_at_work_boundary",
+                "status": "cloud/growth",
+                "sync": "cloud/matrix-sync",
+                "publish": "cloud/matrix-publish",
+                "logged_in": cloud["enabled"],
+                "public_review_required": True,
+                "forum_content_is_untrusted": True,
+                "automatic_execution": False,
+            }
+        )
         if cloud["enabled"] and (cloud.get("release") or {}).get("manifest"):
             registry = self.remote(peer["identity"], "registry")
             leader = any(
@@ -1107,6 +1121,15 @@ class AgentAccess:
     def cloud_action(self, peer, action, value):
         session = self.session(peer, value.get("session_id"))
         self.validate_center(peer, session)
+        if action in ("matrix-read", "matrix-sync", "matrix-publish", "growth-record"):
+            self.session(peer, value.get("session_id"))
+            method = {
+                "matrix-read": "read",
+                "matrix-sync": "sync",
+                "matrix-publish": "publish",
+                "growth-record": "record",
+            }[action]
+            return getattr(self.app.growth, method)(peer, value)
         if action in ("feedback", "feedback-cancel"):
             self.require_leader(peer)
             self.session(peer, value.get("session_id"))

@@ -19,6 +19,7 @@ Control is a desktop application with a loopback Python service. The browser obs
 | `desktop/` | Electron supervision, window lifecycle and OS integration |
 | `cloud/` | Website, account-bound APIs and operator-only maintenance CLI |
 | `scripts/` | Enrollment, updates, package construction and validation entrypoints |
+| `scripts/agent-station.py` | Private stable profiles, bounded lifecycle adapters, project config merge and read-only OS diagnostics |
 | `tests/` | Isolated service, unit, desktop and browser checks |
 
 The local `main` module retains aliases for extracted classes so existing internal integrations remain compatible. Domain modules do not import the application entrypoint. `service/feedback_contract.py` is the single contract source; export copies it into the standalone cloud package.
@@ -28,3 +29,5 @@ The vendored office engine is excluded from mechanical reformatting so its recor
 Runtime packages contain only the allowlisted application. Public development exports additionally include pinned tooling, isolated tests, current developer guides and CI. Local configuration, databases, credentials, historical correspondence and operations evidence never enter either export. The private workspace retains `docs/alpha`, `docs/history` and older scoped evidence for recovery; they are outside active format/build globs.
 
 Do not move state into source folders or hide access errors behind successful-looking UI. A communication lease, latest execution report, task claim and acceptance receipt are separate facts. Saved memory uses explicit versions; uncertain writes are independently read back before another mutation.
+
+Station profiles refer to existing private credential files; host hooks consume only identity/project/event metadata. They never read transcripts, invoke models or replay deliveries. New native identities require explicit handoff. The host adapters and installation boundaries are described in `AGENT_ADAPTERS.md`; source availability does not imply an immutable released package contains them.

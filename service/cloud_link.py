@@ -12,6 +12,7 @@ import time
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
 from release_verify import verify
+import matrix_proof
 
 ORIGIN = "https://ctrlupdate.aieyra.cn"
 
@@ -43,13 +44,25 @@ class CloudLink:
             self.session = vault.load()
 
     def request(self, path, body=None, token=None):
-        if not path.startswith("/v1/") or ".." in path or "?" in path:
+        if (
+            not path.startswith("/v1/")
+            or ".." in path
+            or ("?" in path and not path.startswith("/v1/matrix/"))
+        ):
             raise CloudError("invalid_cloud_route")
         headers = {"Accept": "application/json"}
         if token:
             headers["Authorization"] = "Bearer " + token
         if body is not None:
             headers["Content-Type"] = "application/json"
+            if path.startswith("/v1/matrix/"):
+                session = self.authenticated()
+                if token != session["access_token"] or not session.get("matrix_private_key"):
+                    raise CloudError("matrix_relogin_required", 403)
+                try:
+                    headers.update(matrix_proof.headers(path, body, session))
+                except (ValueError, OSError):
+                    raise CloudError("matrix_proof_failed", 503) from None
         request = Request(
             ORIGIN + path,
             data=json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
@@ -145,6 +158,10 @@ class CloudLink:
             }
 
     def start(self):
+        try:
+            keys = matrix_proof.run({"action": "generate"})
+        except (ValueError, OSError):
+            raise CloudError("matrix_crypto_unavailable", 503) from None
         verifier = secrets.token_urlsafe(32)
         state = secrets.token_urlsafe(32)
         challenge = (
@@ -160,6 +177,7 @@ class CloudLink:
                     "state": state,
                     "scope": "desktop",
                     "redirect_uri": ORIGIN + "/auth/callback",
+                    "public_key": keys["publicKey"],
                 },
             )
             if (
@@ -176,6 +194,7 @@ class CloudLink:
                 "state": state,
                 "expires": time.time() + 300,
                 "authorize_url": result["authorize_url"],
+                "matrix_private_key": keys["privateKey"],
             }
             return {"authorize_url": result["authorize_url"], "expires_in": 300}
 
@@ -200,6 +219,7 @@ class CloudLink:
             stream = self.stream
             self.stream = None
             self.session = value
+            self.session["matrix_private_key"] = self.flow["matrix_private_key"]
             self.flow = None
             self.release = None
             self.last_check = 0

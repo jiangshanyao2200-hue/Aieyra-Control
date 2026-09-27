@@ -49,9 +49,11 @@ def sources(include_development=False):
                 files[p.relative_to(ROOT).as_posix()] = p.read_bytes()
     names = [
         "agent-client.py",
+        "agent-station.py",
         "enroll-agent.py",
         "update-control.py",
         "verify-release.cjs",
+        "matrix-proof.cjs",
         "start-desktop.ps1",
         "migrate-data.py",
         "download-update.py",
@@ -81,6 +83,8 @@ def sources(include_development=False):
     files["docs/SECURITY.md"] = security.read_bytes()
     files["docs/FEEDBACK.md"] = (ROOT / "docs/FEEDBACK.md").read_bytes()
     files["docs/agent-access.md"] = (ROOT / "docs/agent-access.md").read_bytes()
+    files["docs/AGENT_ADAPTERS.md"] = (ROOT / "docs/AGENT_ADAPTERS.md").read_bytes()
+    files["docs/MATRIX_GROWTH.md"] = (ROOT / "docs/MATRIX_GROWTH.md").read_bytes()
     for name in ["DEVELOPMENT.md", "ARCHITECTURE.md", "CHANGELOG.md"]:
         files["docs/" + name] = (ROOT / "docs" / name).read_bytes()
     if include_development:

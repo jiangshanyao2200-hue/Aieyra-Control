@@ -39,6 +39,27 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(result["agents"][1]["availability"], "unavailable")
         self.assertNotIn("password", json.dumps(result, ensure_ascii=False).lower())
 
+    def test_vendor_presence_does_not_claim_hook_configuration_or_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "client.exe"
+            path.touch()
+            calls = []
+
+            def runner(args, **kwargs):
+                calls.append(args)
+                return SimpleNamespace(returncode=0, stdout="fixture-client 1.0\n")
+
+            result = discovery.discover(
+                {"claude_executable": str(path), "cursor_executable": str(path)}, runner
+            )
+            self.assertEqual(len(calls), 2)
+            for row in result["agents"][2:]:
+                self.assertEqual(row["availability"], "available")
+                self.assertFalse(row["adapter"]["configuration_verified"])
+                self.assertFalse(row["adapter"]["execution_control"])
+                self.assertFalse(row["adapter"]["automatic_wakeup"])
+            self.assertTrue(all(args[-1] == "--version" for args in calls))
+
 
 if __name__ == "__main__":
     unittest.main()
