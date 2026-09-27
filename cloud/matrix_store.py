@@ -14,7 +14,7 @@ from feedback_contract import FeedbackError
 KINDS = {"project", "bug", "discussion", "repair", "update"}
 STATES = {"open", "triaged", "in_progress", "resolved", "dismissed"}
 SECRET = re.compile(
-    r"(?i)(-----BEGIN .*PRIVATE KEY|\bsk-[A-Za-z0-9_-]{16}|(?:password|api_key|access_token|authorization|cookie)\s*[:=]|[A-Z]:[\\/]|/Users/|/home/)"
+    r"(?i)(-----BEGIN .*PRIVATE KEY|\bsk-[A-Za-z0-9_-]{16}|(?:password|api_key|access_token|authorization|cookie)\s*[:=]|\b[A-Z]:[\\/]|/Users/|/home/)"
 )
 
 

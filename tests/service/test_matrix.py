@@ -148,6 +148,38 @@ class MatrixHTTPTests(unittest.TestCase):
             self.request("/v1/auth/start", body, headers={"Origin": cloud.SITE})[0], 403
         )
 
+    def test_project_https_links_and_large_public_content_preserve_path_privacy(self):
+        path = "/v1/matrix/topics"
+        p = {
+            **topic("project-public-https"),
+            "type": "project",
+            "projectUrl": "https://example.com/project",
+            "content": "Public project reference https://example.com/docs. " * 190,
+        }
+        self.assertGreater(len(matrix_proof.encode(p)), 8192)
+        code, value = self.request(path, p, self.session)
+        self.assertEqual(code, 200, value)
+        self.assertEqual(value["item"]["projectUrl"], p["projectUrl"])
+        for index, private in enumerate(
+            (
+                r"C:\private\project",
+                "c:/private/project",
+                "/home/user/project",
+                "/Users/user/project",
+            )
+        ):
+            code, value = self.request(
+                path,
+                {
+                    **p,
+                    "requestId": "project-private-path-" + str(index),
+                    "content": "Do not share " + private,
+                },
+                self.session,
+            )
+            self.assertEqual(code, 400, value)
+            self.assertEqual(value["error"], "matrix_private_content_detected")
+
     def test_forum_privacy_roles_cas_and_withdraw(self):
         path = "/v1/matrix/topics"
         p = topic()
