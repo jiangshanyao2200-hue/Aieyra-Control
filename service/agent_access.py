@@ -715,6 +715,19 @@ class AgentAccess:
                 )
             ]
         notices = []
+        notification_store = getattr(self.app, "station_notifications", None)
+        if notification_store:
+            notifications = notification_store.summary(peer)
+            if notifications["pending"]:
+                notices.append(
+                    {
+                        "kind": "leader_notifications",
+                        **notifications,
+                        "read": "station/notifications",
+                        "ack": "station/notification-ack",
+                        "automatic_handoff": False,
+                    }
+                )
         if self.is_leader(peer):
             feedback = self.app.feedback.list(peer)["feedback"]
             notices.append(
@@ -1007,6 +1020,41 @@ class AgentAccess:
     def center(self, peer, route, body=None, query=None):
         if body is not None:
             ident(body.get("request_id"))
+        if route == "history" and body is None:
+            query = query or {}
+            if set(query) - {"before", "limit"}:
+                raise AgentError("invalid_center_history_query")
+            values = {}
+            for key, default, maximum in (
+                ("before", "9223372036854775807", 9223372036854775807),
+                ("limit", "20", 100),
+            ):
+                raw = query.get(key, [default])
+                if (
+                    not isinstance(raw, list)
+                    or len(raw) != 1
+                    or not isinstance(raw[0], str)
+                    or not re.fullmatch(r"[0-9]{1,19}", raw[0])
+                    or not 1 <= int(raw[0]) <= maximum
+                ):
+                    raise AgentError("invalid_center_history_query")
+                values[key] = int(raw[0])
+            # The pinned center returns at most 100 newest-first messages. Apply
+            # the requested page bound here, including with a legacy center.
+            result = self.remote(peer["identity"], route, query={"before": [str(values["before"])]})
+            rows = result.get("messages")
+            if not isinstance(rows, list) or any(
+                not isinstance(row, dict) or type(row.get("seq")) is not int for row in rows
+            ):
+                raise AgentError("invalid_center_history_response", 502)
+            page = rows[: values["limit"]]
+            more = len(rows) > len(page) or bool(result.get("has_more"))
+            return {
+                **result,
+                "messages": page,
+                "has_more": more,
+                "next_before": page[-1]["seq"] if page and more else None,
+            }
         # Always use the enrolled worker identity, including for privileged routes.
         result = self.remote(peer["identity"], route, body, query)
         if route == "project-register" and body is not None:

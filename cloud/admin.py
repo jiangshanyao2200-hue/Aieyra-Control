@@ -36,7 +36,7 @@ with sqlite3.connect(args.data / "cloud.sqlite") as db:
     db.row_factory = sqlite3.Row
     if args.action == "feedback-list":
         rows = db.execute(
-            "SELECT id,version,report,status,revision,note,created,updated FROM feedback "
+            "SELECT id,product,version,report,status,revision,note,created,updated FROM feedback "
             + ("WHERE status=? " if args.status else "")
             + "ORDER BY created DESC LIMIT 50",
             (args.status,) if args.status else (),

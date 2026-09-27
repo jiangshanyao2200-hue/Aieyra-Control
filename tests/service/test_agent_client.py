@@ -21,6 +21,73 @@ spec.loader.exec_module(client_module)
 
 
 class AgentClientTests(unittest.TestCase):
+    def test_cli_query_and_body_errors_are_distinct_and_never_sent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "agent.json"
+            config.write_text(json.dumps({"token": "f" * 64}), encoding="utf-8")
+            body = Path(directory) / "body.json"
+            body.write_text('{"private":"secret",', encoding="utf-8")
+            cases = [
+                (["call", "center/history", "--query", "limit=3"], "invalid_agent_query_json"),
+                (["call", "center/history", "--query", "[]"], "invalid_agent_query_json"),
+                (["call", "center/message", "--body-file", str(body)], "invalid_agent_body_json"),
+                (["memory-save", "--body-file", str(body)], "invalid_agent_body_json"),
+                (
+                    ["call", "center/message", "--body-file", str(body) + ".missing"],
+                    "agent_body_file_unreadable",
+                ),
+            ]
+            for args, expected in cases:
+                with self.subTest(expected=expected, args=args):
+                    output = io.StringIO()
+                    with (
+                        patch.object(
+                            client_module.sys, "argv", ["client", "--config", str(config), *args]
+                        ),
+                        patch.object(client_module.sys, "stdout", output),
+                        patch.object(client_module.AgentClient, "call") as request,
+                    ):
+                        self.assertEqual(client_module.main(), 1)
+                    self.assertEqual(
+                        json.loads(output.getvalue()), {"error": expected, "replay_allowed": False}
+                    )
+                    request.assert_not_called()
+                    self.assertNotIn("secret", output.getvalue())
+
+    def test_cli_valid_query_and_configuration_failures_remain_distinct(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "agent.json"
+            config.write_text(json.dumps({"token": "f" * 64}), encoding="utf-8")
+            args = [
+                "client",
+                "--config",
+                str(config),
+                "call",
+                "center/history",
+                "--query",
+                '{"limit":3}',
+            ]
+            output = io.StringIO()
+            with (
+                patch.object(client_module.sys, "argv", args),
+                patch.object(client_module.sys, "stdout", output),
+                patch.object(
+                    client_module.AgentClient, "call", return_value={"messages": []}
+                ) as request,
+            ):
+                self.assertEqual(client_module.main(), 0)
+            request.assert_called_once_with("center/history", None, {"limit": 3})
+            config.write_text("broken configuration", encoding="utf-8")
+            output = io.StringIO()
+            with (
+                patch.object(client_module.sys, "argv", args),
+                patch.object(client_module.sys, "stdout", output),
+            ):
+                self.assertEqual(client_module.main(), 1)
+            self.assertEqual(
+                json.loads(output.getvalue())["error"], "invalid_or_missing_agent_configuration"
+            )
+
     def client(self):
         return client_module.AgentClient({"token": "f" * 64})
 

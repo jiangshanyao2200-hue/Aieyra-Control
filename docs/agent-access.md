@@ -1,6 +1,6 @@
 # 通用 Agent 接入 v1
 
-开发增量：`docs/AGENT_ADAPTERS.md` 与 `scripts/agent-station.py` 提供稳定档案、主动join/finish、Claude Code/Cursor hooks、Codex配置入口和OS只读诊断。纳入0.6.3源码；实际安装与发行以签名清单为准。新原生身份仍显式handoff，工具只自动报告待交接，不抢占。
+`docs/AGENT_ADAPTERS.md` 与 `scripts/agent-station.py` 提供稳定档案、主动join/finish、Claude Code/Cursor hooks、Codex配置入口和OS只读诊断。0.6.5新增显式 `create`：新Agent可一次完成本人凭据登记、工位档案保存和加入。实际安装与发行以签名清单为准。已有工位更换原生身份仍显式handoff，工具只自动报告待交接，不抢占。
 
 本文对应0.6.3源码能力（新增Matrix与成长协议见docs/MATRIX_GROWTH.md）：项目元信息同步、有界保活、收尾核验与租约详情。实际可下载版本以官网签名清单为准；旧版0.6.1须先升级或核对脚本/API能力后使用新增命令。
 
@@ -18,7 +18,7 @@
 
 1. 先查询registry是否已有项目；已有项目使用原id与现有工位，不为重连重复注册。
 2. 新项目由用户授权的本机owner通过`POST /api/management`提交`action=project-register`，或有相应权限的领导用`center/project-register`。原生payload示例：`{"request_id":"register-demo-1","id":"demo","name":"Demo Project","root":"E:/Projects/Demo","source":"README.md","version":0}`。修改已有项目必须使用查询到的version。owner请求须同源Origin及X-Control-CSRF，Bearer不能发owner接口。
-3. `python scripts/enroll-agent.py --name "Demo维护" --project demo --output C:/private/demo-agent.json`创建本人专属身份。不要共用别人工位的配置，不覆盖已有凭据；未知响应用相同参数加`--resume`核对。
+3. 新Agent使用 `python scripts/agent-station.py --profile C:/private/demo-station.json create --name "Demo维护" --project demo --root E:/Projects/Demo --host generic --native-session-id REAL_CURRENT_HOST_SESSION_ID`，一次创建本人专属凭据、工位档案并加入。中断后保留档案及其 `.state` 目录，用完全相同参数加 `--resume` 接续原请求；新命令不自动登记项目、安装宿主配置或授予领导权。已有角色恢复直接使用原档案 `join`，不要重复创建。底层 `scripts/enroll-agent.py --name "Demo维护" --project demo --output C:/private/demo-agent.json` 仍可单独使用，随后手动建立档案或按第5步连接。
 4. 接入回执的`project_memory.ready`表示记忆存储已就绪；`version=0`和`missing_sections`表示尚未保存正文。名称/root来自本机项目登记，项目路径仅元数据引用，不扫描目录；本地元信息同步不修改任何记忆修订。
 5. 使用`info`、`seats`、`memory --project demo`读取；从seats选择本人seat_id和epoch，再带真实native_session_id连接。保存五部分正文使用完整sections、当前version和有效session_id。阶段结束先保存再`finish`核验。
 
@@ -147,4 +147,15 @@ OS 可选协议桥位于 `service/product_bridge/`，登记策略仍由本机明
 
 CLI 提供 `memory --project control`、`memory --history`、`memory --version 1` 和 `memory-save --body-file <UTF-8 JSON>`。保存包含稳定 request_id、当前 session_id、project、读取时 version、summary，以及 sections 的 blueprint/timeline/checkpoint/recovery/index 五项。409 时先读回合并；未知写入结果查原 request_id 与历史，不能误报未保存。租约失效不构成新执行授权。
 
-当前 MCP 共14工具，含 aieyra_memory、aieyra_memory_save、aieyra_feedback、aieyra_feedback_status、aieyra_feedback_cancel。仅本项目现任 leader、有效租约和 privacy_reviewed=true 可提交已审阅诊断。未登录为本地 queued，官网 ACF 回执为 received，维护结论另行核对；详见 FEEDBACK.md。
+MCP 工具以 `tools/list` 为准，含 aieyra_memory、aieyra_memory_save、aieyra_feedback、aieyra_feedback_status、aieyra_feedback_cancel。仅本项目现任 leader、有效租约和 privacy_reviewed=true 可提交已审阅诊断。未登录为本地 queued，官网 ACF 回执为 received，维护结论另行核对；详见 FEEDBACK.md。
+
+
+## 离线领导通知
+
+`POST station/notify-leader`：已登记身份提交 `{request_id,body,leader_actor_id?}`，服务端按本人项目的有效治理授权选择领导，固定当前native和binding版本。无须先取得待交接工位的租约；不会自动handoff。重复ID同正文返回同记录，正文不同409，跨项目领导403，缺领导/歧义/自发自唤醒409。发送者每小时20条；正文最大2000字符。
+
+`GET station/notifications`：`direction=received|sent`（默认received）、`status=unhandled|all`（默认unhandled）、`limit=1..100`（默认50），返回完整过滤集合的`total`及`has_more/next_cursor`。以`next_cursor`作为`after`继续读取；游标对应通知被确认或服务重启后仍可使用，不能使用他人记录的游标。列表不隐式已读，inbox的pending/unread为完整积压计数。`GET station/notifications/{id}`仅发送者或接收领导读取原状态。
+
+`POST station/notification-ack`：`{session_id,id,state:"read"|"handled"}`，要求当前治理和绑定下本人有效连接。显式native交接后，同一任命领导须先核旧通知与原投递，再增加`review_previous_binding=true`、当前`expected_binding_version`及实际`reason`分别确认read/handled；旧版本409，首次两种审计各自保留。确认不执行handoff，不改原native投递，也不重发unknown。
+
+状态为pending/waiting_adapter/waiting_resource/cooldown/submitting/notified/unknown/needs_attention/superseded/expired。消息持久化、原生turn回执、read_at、handled_at是四个不同事实。unknown只查询原记录，不能自动重发。唤醒需本机显式leader_wakeup配置；当前Codex adapter使用已有daemon的WebSocket-over-proxy，不启动新宿主、不覆盖模型或审批策略。详见AGENT_ADAPTERS.md。OpenAPI包含新路由，MCP可直接发通知/查询/回执。

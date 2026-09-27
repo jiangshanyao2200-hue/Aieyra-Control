@@ -7,6 +7,7 @@ const labels = {
   resolved: '已解决',
   rejected: '已关闭',
 };
+const products = { 'aieyra-control': 'Aieyra Control', 'aieyra-os': 'Aieyra OS' };
 async function load() {
   document.querySelector('[data-feedback-retry]').disabled = true;
   try {
@@ -32,7 +33,7 @@ async function load() {
         meta = document.createElement('p');
       title.textContent = ticket.report.title;
       meta.className = 'feedback-meta';
-      meta.textContent = `${ticket.id} · ${labels[ticket.status] || '待核对'} · ${ticket.version}`;
+      meta.textContent = `${ticket.id} · ${products[ticket.product] || '产品待核对'} · ${labels[ticket.status] || '待核对'} · ${ticket.version}`;
       detail.append(title, meta);
       const names = {
         summary: '问题',
@@ -62,7 +63,7 @@ async function load() {
     document.querySelector('[data-login]').hidden = true;
     status.textContent = value.tickets.length
       ? '仅你和维护人员可见 · 受理不代表已修复'
-      : '暂无反馈。工位领导发现产品问题后可通过专用协议提交。';
+      : '暂无反馈。请在对应产品中连接私密反馈并审阅报告。';
   } catch {
     status.textContent = '暂时无法获取反馈，请稍后重试。';
   } finally {

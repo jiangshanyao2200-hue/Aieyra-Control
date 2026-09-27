@@ -11,6 +11,26 @@ from feedback_contract import FeedbackError, canonical, prepare
 
 
 class FeedbackStore:
+    @staticmethod
+    def feedback_capabilities():
+        return {
+            "contract": "aieyra-private-feedback/2",
+            "products": ["aieyra-control", "aieyra-os"],
+            "auth_scope_by_product": {"aieyra-control": "desktop", "aieyra-os": "feedback"},
+            "private": True,
+            "report_max_bytes": 6000,
+            "request_max_bytes": 8192,
+            "channel_expires_in": 600,
+        }
+
+    @staticmethod
+    def feedback_product(session):
+        if session["scope"] == "desktop":
+            return "aieyra-control"
+        if session["scope"] == "feedback" and session.get("product") == "aieyra-os":
+            return "aieyra-os"
+        raise FeedbackError("agent_client_required", 403)
+
     def init_feedback(self):
         with self.db() as db:
             db.executescript("""
@@ -25,15 +45,21 @@ class FeedbackStore:
             )
 
     def feedback_channel(self, session, body):
-        if session["scope"] != "desktop":
-            raise FeedbackError("agent_client_required", 403)
-        if set(body) != {"installation", "station"} or any(
-            not isinstance(v, str) or not re.fullmatch("[a-f0-9]{64}", v) for v in body.values()
+        product = self.feedback_product(session)
+        allowed = ({"installation", "station", "product"},)
+        if product == "aieyra-control":
+            allowed += ({"installation", "station"},)
+        if set(body) not in allowed or any(
+            not isinstance(body.get(k), str) or not re.fullmatch("[a-f0-9]{64}", body[k])
+            for k in ("installation", "station")
         ):
             raise FeedbackError("invalid_feedback_channel")
+        if body.get("product", "aieyra-control") != product:
+            raise FeedbackError("feedback_product_mismatch", 403)
         self.limit("feedback-channel:" + session["subject"], 20, 60)
         claims = {
             **body,
+            "product": product,
             "session": session["hash"],
             "expires": int(time.time()) + 600,
             "scope": "feedback:create",
@@ -45,7 +71,8 @@ class FeedbackStore:
             "expires_in": 600,
             "scope": "feedback:create",
             "private": True,
-            "identity_assurance": "authenticated_account; locally_authorized_leader_claim",
+            "product": product,
+            "identity_assurance": "authenticated_account; product_scoped_feedback",
         }
 
     def verify_channel(self, session, token):
@@ -58,10 +85,12 @@ class FeedbackStore:
             ):
                 raise ValueError()
             claims = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+            product = self.feedback_product(session)
             if (
                 claims["session"] != session["hash"]
                 or claims["expires"] <= time.time()
                 or claims["scope"] != "feedback:create"
+                or claims.get("product", "aieyra-control") != product
             ):
                 raise ValueError()
             return claims
@@ -72,21 +101,32 @@ class FeedbackStore:
     def feedback_receipt(row):
         return {
             k: row[k]
-            for k in ("id", "request_id", "status", "revision", "note", "created", "updated")
+            for k in (
+                "id",
+                "request_id",
+                "product",
+                "version",
+                "status",
+                "revision",
+                "note",
+                "created",
+                "updated",
+            )
         }
 
     def submit_feedback(self, session, body):
-        if session["scope"] != "desktop":
-            raise FeedbackError("agent_client_required", 403)
+        product = self.feedback_product(session)
         if set(body) != {"request_id", "channel_token", "product", "version", "report"}:
             raise FeedbackError("invalid_feedback_fields")
         claims = self.verify_channel(session, body["channel_token"])
         if (
-            body["product"] != "aieyra-control"
+            body["product"] not in ("aieyra-control", "aieyra-os")
             or not isinstance(body["version"], str)
             or not re.fullmatch(r"\d{1,4}\.\d{1,4}\.\d{1,4}", body["version"])
         ):
             raise FeedbackError("invalid_feedback_product")
+        if body["product"] != product:
+            raise FeedbackError("feedback_product_mismatch", 403)
         rid = body["request_id"]
         if not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,100}", rid):
             raise FeedbackError("invalid_request_id")
@@ -149,19 +189,25 @@ class FeedbackStore:
         }
 
     def list_feedback(self, session, ticket=None):
+        product = None if session["scope"] == "browser" else self.feedback_product(session)
+        product_filter = " AND product=?" if product else ""
+        product_args = (product,) if product else ()
         with self.db() as db:
             if ticket:
                 if not re.fullmatch("ACF-[a-f0-9]{24}", ticket):
                     raise FeedbackError("feedback_missing", 404)
                 rows = db.execute(
-                    "SELECT * FROM feedback WHERE subject=? AND id=?", (session["subject"], ticket)
+                    "SELECT * FROM feedback WHERE subject=? AND id=?" + product_filter,
+                    (session["subject"], ticket, *product_args),
                 ).fetchall()
                 if not rows:
                     raise FeedbackError("feedback_missing", 404)
             else:
                 rows = db.execute(
-                    "SELECT * FROM feedback WHERE subject=? ORDER BY created DESC LIMIT 50",
-                    (session["subject"],),
+                    "SELECT * FROM feedback WHERE subject=?"
+                    + product_filter
+                    + " ORDER BY created DESC LIMIT 50",
+                    (session["subject"], *product_args),
                 ).fetchall()
         return {
             "tickets": [

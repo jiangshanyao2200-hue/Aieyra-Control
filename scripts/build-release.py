@@ -55,7 +55,7 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
         "sequence": sequence,
         "created_at": int(time.time()),
         "minimum_updater": 1,
-        "notes": "降低空闲轮询、重复磁盘写入和后台网页占用；活动写入即时唤醒、服务故障继续恢复；新增有界工位恢复正文与增量群聊读取，保留显式确认、签名更新和回退。",
+        "notes": "新增Agent显式创建并加入工位、离线领导通知与有界历史查询；完善通知分页和交接后复核，区分CLI输入错误；支持私密反馈/2产品隔离，保留身份校验、未知投递不重放、签名更新及回退。",
         "source": {
             "path": "/artifacts/" + source.name,
             "sha256": digest(source.read_bytes()),

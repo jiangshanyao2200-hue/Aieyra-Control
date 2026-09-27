@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Restore a stable Control station from explicit local host lifecycle events.
 
-No model calls, transcript reads, task replay, automatic enrollment or handoff.
+Explicit create enrolls a new identity; join never enrolls or changes ownership.
+No model calls, transcript reads, task replay or automatic handoff.
 Profiles contain credential file references, never copied tokens.
 """
 
@@ -23,13 +24,18 @@ import threading
 import time
 import uuid
 from urllib.request import Request
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 SPEC = importlib.util.spec_from_file_location(
     "station_client", Path(__file__).with_name("agent-client.py")
 )
 CLIENT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLIENT)
+SPEC = importlib.util.spec_from_file_location(
+    "station_enrollment", Path(__file__).with_name("enroll-agent.py")
+)
+ENROLL = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(ENROLL)
 Error = CLIENT.ClientError
 ID = re.compile(r"[A-Za-z0-9_.:-]{1,100}\Z")
 HOSTS = ("codex", "claude", "cursor", "os", "generic")
@@ -114,6 +120,141 @@ def lock(path, seconds=5):
                 msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def create_station(
+    profile_path,
+    *,
+    name,
+    project,
+    root,
+    host,
+    native,
+    port=17910,
+    resume=False,
+    lease=True,
+):
+    """Explicit local bootstrap with a durable intent and a dedicated credential."""
+    if (
+        not isinstance(name, str)
+        or not name.strip()
+        or len(name) > 80
+        or any(ord(c) < 32 for c in name)
+        or not isinstance(project, str)
+        or not ID.fullmatch(project)
+        or host not in HOSTS
+        or not isinstance(native, str)
+        or not ID.fullmatch(native)
+        or type(port) is not int
+        or not 1 <= port <= 65535
+        or type(lease) is not bool
+    ):
+        raise Error("invalid_station_creation")
+    path = Path(profile_path).resolve()
+    root = Path(root).resolve()
+    if not root.is_dir():
+        raise Error("project_root_missing")
+    state_dir = path.parent / (path.stem + ".state")
+    intent_path = state_dir / "create.json"
+    config_path = state_dir / "credential.json"
+    if path == config_path or path == intent_path or state_dir in path.parents:
+        raise Error("invalid_station_profile_path")
+    requested = {
+        "name": name,
+        "project": project,
+        "root": str(root),
+        "host": host,
+        "native_session_id": native,
+        "port": port,
+        "lease": lease,
+        "profile": str(path),
+    }
+    with lock(state_dir / "create.lock"):
+        if resume:
+            if not intent_path.is_file():
+                raise Error("station_creation_intent_missing_use_join_for_existing_profile")
+            intent = read_json(intent_path)
+            if intent.get("requested") != requested:
+                raise Error("station_creation_resume_mismatch")
+        else:
+            if path.exists():
+                raise Error("station_profile_exists_use_join")
+            if (
+                intent_path.exists()
+                or config_path.exists()
+                or (state_dir / "connection.json").exists()
+            ):
+                raise Error("station_creation_exists_use_resume")
+            intent = {"requested": requested, "request_id": "create-" + uuid.uuid4().hex}
+            atomic(intent_path, intent)
+        # A profile can only be adopted from this exact completed creation.
+        if path.exists():
+            if not intent.get("profile") or read_json(path) != intent["profile"]:
+                raise Error("station_creation_profile_conflict")
+            station = Station(path)
+        else:
+            try:
+                result = ENROLL.enroll(
+                    name,
+                    project,
+                    config_path,
+                    port=port,
+                    request_id=intent["request_id"],
+                    resume=config_path.exists(),
+                )
+            except HTTPError as error:
+                try:
+                    with error:
+                        code = CLIENT.AgentClient.read_response(error).get("code", "")
+                    if not isinstance(code, str) or not re.fullmatch(
+                        r"[A-Za-z0-9_.-]{1,100}", code
+                    ):
+                        code = "station_enrollment_unconfirmed_retry_create_with_resume"
+                except (Error, OSError, ValueError):
+                    code = "station_enrollment_unconfirmed_retry_create_with_resume"
+                raise Error(code, error.code) from None
+            except (OSError, URLError):
+                raise Error("station_enrollment_unconfirmed_retry_create_with_resume") from None
+            credential = result["credential"]
+            if (
+                result["state"] != "ready"
+                or credential.get("revoked")
+                or credential.get("project") != project
+            ):
+                raise Error("station_enrollment_not_ready")
+            client = CLIENT.AgentClient(read_json(config_path))
+            seats = client.call("seats")
+            if seats.get("actor_id") != credential["actor_id"]:
+                raise Error("credential_actor_mismatch")
+            matching = [s for s in seats["seats"] if s.get("project") == project]
+            if len(matching) != 1:
+                raise Error("station_enrollment_seat_ambiguous")
+            profile = {
+                "schema": 1,
+                "host": host,
+                "project": project,
+                "root": str(root),
+                "config_file": str(config_path),
+                "actor_id": credential["actor_id"],
+                "seat_id": matching[0]["id"],
+                "lease": lease,
+            }
+            if intent.get("profile") and intent["profile"] != profile:
+                raise Error("station_creation_identity_changed")
+            intent["profile"] = profile
+            atomic(intent_path, intent)
+            # Never replace an existing profile, including one written concurrently.
+            ENROLL.save_new(path, profile)
+            station = Station(path)
+        joined = station.ensure(native, True)
+        return {
+            **joined,
+            "profile": str(path),
+            "config_file": str(config_path),
+            "actor_id": station.p["actor_id"],
+            "enrollment_request_id": intent["request_id"],
+            "creation_resumed": resume,
+        }
 
 
 class Station:
@@ -279,6 +420,8 @@ class Station:
                         "expected_version": binding["version"],
                     }
                     atomic(request, intent)
+                intent = read_json(request)
+                if intent["status"] != "sent":
                     try:
                         receipt = self.client.call(
                             "center/message",
@@ -295,6 +438,25 @@ class Station:
                         atomic(request, intent)
                     except Error:
                         pass
+                if intent.get("status") == "sent" and "leader_notification" not in intent:
+                    # The new route binds the leader server-side. The same ID/body
+                    # is safe after response loss; native unknown results never replay.
+                    try:
+                        notice = self.client.call(
+                            "station/notify-leader",
+                            {
+                                "request_id": intent["request_id"],
+                                "body": "Station recovery requests explicit CAS handoff: "
+                                + json.dumps(result)
+                                + ". Verify the current owner and pending deliveries; no automatic takeover or task replay.",
+                            },
+                        )
+                        intent["leader_notification"] = notice["notification"]["id"]
+                        atomic(request, intent)
+                    except Error as error:
+                        result["leader_notification_error"] = error.code
+                if intent.get("leader_notification"):
+                    result["leader_notification_id"] = intent["leader_notification"]
                 result["handoff_notice"] = read_json(request)["status"]
                 return result
             state = self.state()
@@ -836,6 +998,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", required=True, type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
+    p = commands.add_parser("create", help="Create a dedicated local station and join it")
+    p.add_argument("--name", required=True)
+    p.add_argument("--project", required=True)
+    p.add_argument("--root", required=True, type=Path)
+    p.add_argument("--host", required=True, choices=HOSTS)
+    p.add_argument("--native-session-id", required=True)
+    p.add_argument("--port", type=int, default=17910)
+    p.add_argument("--no-lease", action="store_true", help="Do not start the bounded lease helper")
+    p.add_argument("--resume", action="store_true", help="Continue exactly the saved creation")
     commands.add_parser("doctor")
     commands.add_parser("os-doctor")
     commands.add_parser("hook")
@@ -852,12 +1023,48 @@ def main():
             p.add_argument("--limit", type=int, default=20)
     p = commands.add_parser("watch")
     p.add_argument("--session-id", required=True)
+    p = commands.add_parser(
+        "notify-leader", help="Send a durable leader message and request bounded native wakeup"
+    )
+    p.add_argument("--request-id", required=True)
+    p.add_argument("--body-file", required=True, help="UTF-8 message, at most 2000 characters")
+    p.add_argument("--leader-actor-id")
+    p = commands.add_parser("notification", help="Query the original leader-notification receipt")
+    p.add_argument("--id", required=True)
+    p = commands.add_parser("notifications", help="Page received or sent notifications without ACK")
+    p.add_argument("--direction", choices=("received", "sent"), default="received")
+    p.add_argument("--status", choices=("unhandled", "all"), default="unhandled")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--after")
+    p = commands.add_parser(
+        "notification-ack", help="Explicitly record reading or handling with your live session"
+    )
+    p.add_argument("--session-id", required=True)
+    p.add_argument("--id", required=True)
+    p.add_argument("--state", choices=("read", "handled"), required=True)
+    p.add_argument("--review-previous-binding", action="store_true")
+    p.add_argument("--expected-binding-version", type=int)
+    p.add_argument("--reason")
     for command in ("install", "uninstall"):
         commands.add_parser(command)
     p = commands.add_parser("codex", help="Explicit project-scoped MCP configuration for Codex CLI")
     p.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     try:
+        if args.command == "create":
+            output = create_station(
+                args.profile,
+                name=args.name,
+                project=args.project,
+                root=args.root,
+                host=args.host,
+                native=args.native_session_id,
+                port=args.port,
+                resume=args.resume,
+                lease=not args.no_lease,
+            )
+            print(json.dumps(output, ensure_ascii=False))
+            return 0
         station = Station(args.profile)
         if args.command == "codex":
             if station.p["host"] != "codex":
@@ -907,6 +1114,36 @@ def main():
             output = station.finish(args.native_session_id)
         elif args.command == "watch":
             output = station.watch(args.session_id)
+        elif args.command == "notify-leader":
+            body = Path(args.body_file).read_text(encoding="utf-8-sig")
+            if not body.strip() or len(body) > 2000:
+                raise Error("invalid_leader_notification")
+            payload = {"request_id": args.request_id, "body": body}
+            if args.leader_actor_id:
+                payload["leader_actor_id"] = args.leader_actor_id
+            output = station.client.call("station/notify-leader", payload)
+        elif args.command == "notification":
+            if not ID.fullmatch(args.id):
+                raise Error("invalid_notification_id")
+            output = station.client.call("station/notifications/" + args.id)
+        elif args.command == "notifications":
+            if not 1 <= args.limit <= 100 or (
+                args.after is not None and not ID.fullmatch(args.after)
+            ):
+                raise Error("invalid_notification_query")
+            query = {"direction": args.direction, "status": args.status, "limit": args.limit}
+            if args.after is not None:
+                query["after"] = args.after
+            output = station.client.call("station/notifications", query=query)
+        elif args.command == "notification-ack":
+            payload = {"session_id": args.session_id, "id": args.id, "state": args.state}
+            if args.review_previous_binding:
+                payload["review_previous_binding"] = True
+            if args.expected_binding_version is not None:
+                payload["expected_binding_version"] = args.expected_binding_version
+            if args.reason is not None:
+                payload["reason"] = args.reason
+            output = station.client.call("station/notification-ack", payload)
         else:
             output = configure(station, remove=args.command == "uninstall")
         print(json.dumps(output, ensure_ascii=False))

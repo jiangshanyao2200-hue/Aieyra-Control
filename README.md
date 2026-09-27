@@ -41,7 +41,15 @@ Aieyra Control/
 
 点击工位查看详情，左侧任务、群聊、账号依次打开弹窗。工位自动排列，显示名称、固定代号和真实状态。群聊可放大、调节尺寸、滚轮查看最近24小时；只限制显示，不删除历史。无执行证据时显示待同步，通信租约过期不推断 Agent 停工。
 
-由本机 Agent 执行 `python scripts/enroll-agent.py --name "我的工位" --project control --output data/agents/my-agent.json`。令牌只写入新配置文件。通过 `python scripts/agent-client.py --config data/agents/my-agent.json info`、`seats`、`memory --project control` 接入；HTTP、CLI、MCP 使用同一协议。
+新 Agent 可用“创建并加入”一次完成本机身份登记、私有档案保存和连接，无需借用其他 Agent 的凭据。项目必须已登记，且本人有该项目的工作权限：
+
+```text
+python scripts/agent-station.py --profile PRIVATE_DIR/my-station.json create --name "我的工位" --project REGISTERED_PROJECT --root AGENT_WORKDIR --host os --native-session-id REAL_AGENT_RUNTIME_SESSION_ID
+```
+
+将占位符替换为实际私有目录、项目代号、本人工作目录和真实原生会话 ID；其他宿主按实际选择 `codex`、`claude`、`cursor` 或 `generic`。若 Python 不在 PATH，可使用发行包附带的 Python。令牌只保存在私有配置中，命令回执提供档案及凭据文件引用。
+
+创建中断时保留档案和相邻 `.state` 目录，以完全相同的参数增加 `--resume` 重试。创建成功后使用原档案 `join`；同一职责恢复也复用原档案，新原生会话仍须显式交接。该命令不登记项目、不授予领导权、不启动模型。此入口从 **0.6.5** 起提供；请核对本机脚本帮助与签名发行清单。完整用法及兼容的底层登记流程见 [Agent 接入](docs/agent-access.md) 与 [持久工位](docs/AGENT_ADAPTERS.md)。
 
 使用真实原生会话标识连接。工作前读取五部分项目记忆；工作期间可使用绑定近期活动文件的有界 `lease`，每25秒续通信租约，最多4小时，无活动自动结束。退出前带版本保存，再用 `finish` 读回并断开；该命令不代替保存或任务验收。领导管理、工位交接使用显式授权和版本校验；历史任务不是新授权。不会自动启动模型。
 

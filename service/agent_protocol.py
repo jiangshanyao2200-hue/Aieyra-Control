@@ -89,6 +89,57 @@ def openapi(origin="http://127.0.0.1:17910"):
         "reason": {"type": "string", "minLength": 1, "maxLength": 1000},
     }
     operation(
+        prefix + "station/notify-leader",
+        "post",
+        "Persist a message to the authorized project leader and request bounded wakeup",
+        {
+            **request,
+            "body": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "leader_actor_id": identifier,
+        },
+        ["request_id", "body"],
+    )
+    operation(
+        prefix + "station/notifications",
+        "get",
+        "Page received/sent notifications; total matches filters before cursor; no implicit ACK",
+    )
+    paths[prefix + "station/notifications"]["get"]["parameters"] = [
+        {"name": name, "in": "query", "required": False, "schema": shape}
+        for name, shape in (
+            (
+                "after",
+                {
+                    **identifier,
+                    "description": "Previous next_cursor; remains valid after that notice is handled",
+                },
+            ),
+            ("limit", {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}),
+            ("direction", {"type": "string", "enum": ["received", "sent"], "default": "received"}),
+            ("status", {"type": "string", "enum": ["unhandled", "all"], "default": "unhandled"}),
+        )
+    ]
+    operation(
+        prefix + "station/notifications/{id}",
+        "get",
+        "Sender or target reads the original notification status",
+        params=[("id", "path")],
+    )
+    operation(
+        prefix + "station/notification-ack",
+        "post",
+        "Current bound leader records read/handled; old binding requires explicit review, version and reason",
+        {
+            "session_id": session,
+            "id": identifier,
+            "state": {"enum": ["read", "handled"]},
+            "review_previous_binding": {"type": "boolean", "default": False},
+            "expected_binding_version": {"type": "integer", "minimum": 1},
+            "reason": {"type": "string", "minLength": 1, "maxLength": 1000},
+        },
+        ["session_id", "id", "state"],
+    )
+    operation(
         prefix + "station/handoff",
         "post",
         "Leader explicitly replaces a disconnected native session using binding version",
@@ -294,6 +345,18 @@ def openapi(origin="http://127.0.0.1:17910"):
         paths[prefix + "center/" + route]["get"]["x-query-contract"] = (
             "Forward center query parameters; center validates its native contract."
         )
+    history = paths[prefix + "center/history"]["get"]
+    history["x-query-contract"] = (
+        "Newest-first bounded history, no implicit ACK. Follow next_before with before. "
+        "Unknown query fields are rejected."
+    )
+    history["parameters"] = [
+        {"name": name, "in": "query", "required": False, "schema": shape}
+        for name, shape in (
+            ("before", {"type": "integer", "minimum": 1, "maximum": 9223372036854775807}),
+            ("limit", {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}),
+        )
+    ]
     for route in sorted(WRITES):
         operation(
             prefix + "center/" + route,

@@ -1,5 +1,17 @@
 # Changes
 
+## 0.6.5
+
+- Agent history reads now honor a 1–100 message limit (default 20) and return an exclusive `next_before` cursor. Invalid query/body JSON and unreadable body files have distinct CLI errors, so input mistakes are no longer reported as credential failures. Reads do not acknowledge messages.
+
+- Leader notifications support received/sent history, bounded cursor pagination and accurate full-backlog pending/unread counts. After an explicit native handoff, the same appointed leader can review old notices with a current binding-version check and reason. Separate first-read/handled audit receipts preserve the original target and delivery result; lost native submissions remain non-replayable.
+
+- Stations can send durable project-leader notifications while the leader is offline. Changed-native join requests notify the leader automatically; an explicitly configured Codex daemon adapter resumes the bound leader and delivers a notice. Identity fencing, coalescing/rate limits, CPU/RAM headroom checks, no retry after uncertain native submission, and separate read/handled receipts preserve handoff and execution boundaries.
+
+- Cloud private feedback supports an independently authorized `feedback` session for `aieyra-os`, bound product channels, product-isolated native queries and explicit product/version receipts. Existing Control desktop/browser flows remain compatible. Server contract `/2` was deployed on 2026-09-27 and verified through both official domains; real OS account authorization and receipt remain a separate acceptance step. Release availability is determined by the signed server manifest.
+- Explicit `agent-station.py create` lets a new local agent enroll its dedicated identity, publish a private station profile and join in one command. Exact `create --resume` retries retain the original enrollment and use existing join reconciliation; existing profiles, native handoff and task authority remain protected.
+- Local enrollment is reusable by both CLIs, rejects HTTP redirects and publishes complete credential/profile JSON without overwriting an existing file. No service schema changes or additional runtime dependencies are required.
+
 ## 0.6.4
 
 - Local idle synchronization uses write-triggered wakeups and a 30-second fallback. Active deliveries, configured runtime observers and external centers retain fast checks. Unchanged status no longer rewrites the SQLite cache.

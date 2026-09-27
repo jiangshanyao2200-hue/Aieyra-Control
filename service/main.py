@@ -44,6 +44,7 @@ from request_intake import RequestIntake, IntakeError, ROUTES as INTAKE_READS
 from requirement_delivery import RequirementDeliveries, RequirementDeliveryError
 from agent_access import AgentAccess, AgentError, READS as AGENT_READS, WRITES as AGENT_WRITES
 from agent_protocol import openapi as agent_openapi
+from station_notifications import StationNotifications
 from project_memory import ProjectMemory, MemoryError
 from cloud_link import CloudLink, CloudError
 from cloud_session import SessionVault
@@ -52,7 +53,7 @@ from growth import Growth
 from local_hub import create_local_hub
 from paths import shared_directory, configuration_file, initialize as initialize_paths
 
-VERSION = "0.6.4"
+VERSION = "0.6.5"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -154,6 +155,7 @@ class Application:
         self._discovery = None
         self._discovery_at = 0.0
         self.agent_access = AgentAccess(self)
+        self.station_notifications = StationNotifications(self)
         self.project_memory = ProjectMemory(self.store, config.get("local_projects", []))
         for credential in self.agent_access.listing()["credentials"]:
             if not credential["revoked"]:
@@ -732,6 +734,7 @@ class Application:
             self.refresh_resources()
             self.next_resource_refresh = time.monotonic() + 30
         self.dispatch_one()
+        self.station_notifications.tick()
         self.requirement_deliveries.sync()
 
     def run(self):
@@ -915,6 +918,16 @@ class Handler(BaseHTTPRequestHandler):
                 "os_primary": True,
                 "lease_seconds": 90,
                 "openapi": "/api/agent-openapi",
+                "leader_notifications": {
+                    "submit": "station/notify-leader",
+                    "read": "station/notifications",
+                    "ack": "station/notification-ack",
+                    "native_wakeup": "configured_leaders_only",
+                    "delivery_is_not_read_or_handled": True,
+                    "cursor_pagination": True,
+                    "sent_history": True,
+                    "previous_binding_review": "explicit_current_version_and_reason",
+                },
                 "project_memory": {
                     "read": "memory?project=" + peer["project"],
                     "write": "memory",
@@ -938,6 +951,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.memory_get(query, project)
         if path == "seats":
             return access.seats(peer)
+        if path == "station/notifications":
+            return self.server.app.station_notifications.read(
+                peer, query={k: v[0] for k, v in query.items()}
+            )
+        if path.startswith("station/notifications/"):
+            return self.server.app.station_notifications.read(
+                peer, path[22:], query={k: v[0] for k, v in query.items()}
+            )
         if path == "inbox":
             if set(query) != {"session_id"}:
                 raise AgentError("session_id_required")
@@ -1230,7 +1251,11 @@ class Handler(BaseHTTPRequestHandler):
             if peer:
                 action = path[14:]
                 result = (
-                    self.server.app.agent_access.station_action(peer, action[8:], value)
+                    self.server.app.station_notifications.submit(peer, value)
+                    if action == "station/notify-leader"
+                    else self.server.app.station_notifications.acknowledge(peer, value)
+                    if action == "station/notification-ack"
+                    else self.server.app.agent_access.station_action(peer, action[8:], value)
                     if action.startswith("station/")
                     else self.server.app.agent_access.cloud_action(peer, action[6:], value)
                     if action.startswith("cloud/")

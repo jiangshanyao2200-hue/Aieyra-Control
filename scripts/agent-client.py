@@ -309,6 +309,39 @@ TOOLS = [
     ),
     ("aieyra_info", "Read protocol and available native center operations.", schema({})),
     (
+        "aieyra_notify_leader",
+        "Persist a message to this project's appointed leader and request bounded native wakeup, even while offline. Use the same request_id/body on retry. Never changes native binding or grants execution permission.",
+        schema({"request_id": STR, "body": STR, "leader_actor_id": STR}, ("request_id", "body")),
+    ),
+    (
+        "aieyra_leader_notifications",
+        "Page through received or sent notifications using next_cursor as after; default received/unhandled, limit 50 (1-100). Or query one id without filters. Reading is not ACK.",
+        schema(
+            {
+                "id": STR,
+                "after": STR,
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                "direction": {"enum": ["received", "sent"]},
+                "status": {"enum": ["unhandled", "all"]},
+            }
+        ),
+    ),
+    (
+        "aieyra_notification_ack",
+        "The bound leader explicitly records read or handled. After explicit handoff, review old notifications with review_previous_binding=true, current expected_binding_version and reason. Never changes binding or redelivers input. Handling requires completing the coordination.",
+        schema(
+            {
+                "session_id": STR,
+                "id": STR,
+                "state": {"enum": ["read", "handled"]},
+                "review_previous_binding": {"type": "boolean"},
+                "expected_binding_version": {"type": "integer", "minimum": 1},
+                "reason": STR,
+            },
+            ("session_id", "id", "state"),
+        ),
+    ),
+    (
         "aieyra_seats",
         "List seats assigned to this agent and whether they can be selected.",
         schema({}),
@@ -428,6 +461,16 @@ def invoke(client, name, arguments):
         ):
             raise ClientError("invalid_tool_arguments")
     action = name.removeprefix("aieyra_")
+    if action == "notify_leader":
+        return client.call("station/notify-leader", arguments)
+    if action == "leader_notifications":
+        if "id" in arguments:
+            if len(arguments) != 1:
+                raise ClientError("invalid_tool_arguments")
+            return client.call("station/notifications/" + arguments["id"])
+        return client.call("station/notifications", query=arguments)
+    if action == "notification_ack":
+        return client.call("station/notification-ack", arguments)
     if action == "growth_status":
         return client.call("cloud/growth")
     if action in ("matrix_read", "matrix_sync", "matrix_publish", "growth_record"):
@@ -669,6 +712,24 @@ def keep_lease(client, session_id, activity_file, max_seconds=3600, idle_seconds
     }
 
 
+def cli_json_object(raw, error_code):
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        raise ClientError(error_code) from None
+    if not isinstance(value, dict):
+        raise ClientError(error_code)
+    return value
+
+
+def cli_body_file(path):
+    try:
+        raw = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        raise ClientError("agent_body_file_unreadable") from None
+    return cli_json_object(raw, "invalid_agent_body_json")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=os.environ.get("AIEYRA_AGENT_CONFIG"))
@@ -715,7 +776,7 @@ def main():
     p = sub.add_parser("call")
     p.add_argument("route")
     p.add_argument("--body-file", type=Path)
-    p.add_argument("--query", default="{}")
+    p.add_argument("--query", default="{}", help='JSON object, for example: {"limit":3}')
     p = sub.add_parser("lookup")
     p.add_argument("kind", choices=["sessions", "requests", "deliveries"])
     p.add_argument("id")
@@ -765,20 +826,15 @@ def main():
                 fields["history"] = "1"
             value = client.call("memory", query=fields)
         elif args.command == "memory-save":
-            value = client.call(
-                "memory", json.loads(args.body_file.read_text(encoding="utf-8-sig"))
-            )
+            value = client.call("memory", cli_body_file(args.body_file))
         elif args.command == "inbox":
             value = client.call("inbox", query={"session_id": args.session_id})
         elif args.command == "lookup":
             value = client.call(args.kind + "/" + args.id)
         elif args.command == "call":
-            body = (
-                json.loads(args.body_file.read_text(encoding="utf-8-sig"))
-                if args.body_file
-                else None
-            )
-            value = client.call(args.route, body, json.loads(args.query))
+            body = cli_body_file(args.body_file) if args.body_file else None
+            query = cli_json_object(args.query, "invalid_agent_query_json")
+            value = client.call(args.route, body, query)
         else:
             request = args.request_id or uuid.uuid4().hex
             sid = args.session_id or uuid.uuid4().hex

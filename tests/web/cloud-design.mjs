@@ -106,6 +106,7 @@ async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no
               tickets: [
                 {
                   id: 'ACF-' + 'a'.repeat(24),
+                  product: 'aieyra-control',
                   status: 'received',
                   version: '0.6.1',
                   report: {
@@ -113,6 +114,14 @@ async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no
                     summary: 'Selected diagnostics',
                   },
                   note: 'Private maintenance response',
+                },
+                {
+                  id: 'ACF-' + 'b'.repeat(24),
+                  product: 'aieyra-os',
+                  status: 'triaged',
+                  version: '0.2.20',
+                  report: { title: 'Synthetic OS report', summary: 'Selected failure summary' },
+                  note: '',
                 },
               ],
             }
@@ -400,23 +409,42 @@ try {
     assert.ok((await page.locator('[role=status]').innerText()).includes('没有待完成的登录'));
     assert.ok(await page.locator('[data-login]').isVisible());
   });
-  await test('desktop-authorization-callback-clearly-returns-to-control', async () => {
+  await test('authorization-callback-clearly-returns-to-requesting-app', async () => {
     await open('/auth/callback?code=fixture-code&flow=fixture-flow');
     assert.ok(
-      (await page.locator('[role=status]').innerText()).includes('授权已完成，请返回 Control'),
+      (await page.locator('[role=status]').innerText()).includes(
+        '授权已完成，请返回发起授权的应用',
+      ),
     );
     assert.equal(await page.locator('[data-login]').isVisible(), false);
     assert.equal(new URL(page.url()).search, '');
   });
   await test('private-feedback-safe-rendering-and-mobile-login', async () => {
     await open('/feedback');
-    await page.locator('.feedback-list summary').waitFor();
+    await page.locator('.feedback-list summary').first().waitFor();
     assert.equal(await page.locator('.feedback-list img').count(), 0);
-    await page.locator('summary').click();
+    assert.equal(await page.locator('.feedback-list li').count(), 2);
+    assert.ok(
+      (await page.locator('.feedback-meta').allTextContents()).some(
+        (t) => t.includes('Aieyra Control') && t.includes('0.6.1'),
+      ),
+    );
+    assert.ok(
+      (await page.locator('.feedback-meta').allTextContents()).some(
+        (t) => t.includes('Aieyra OS') && t.includes('0.2.20'),
+      ),
+    );
+    await page.locator('summary').first().click();
     assert.ok(
       (await page.locator('.feedback-list').innerText()).includes('Private maintenance response'),
     );
     await page.screenshot({ path: path.join(out, 'feedback-private.png') });
+    await context.close();
+    await open('/feedback', 390, 844);
+    await page.locator('.feedback-list li').nth(1).waitFor();
+    await page.locator('summary').nth(1).click();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.screenshot({ path: path.join(out, 'feedback-products-mobile.png') });
     await context.close();
     authenticated = false;
     await open('/feedback', 390, 844);

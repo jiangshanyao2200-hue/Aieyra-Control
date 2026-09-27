@@ -302,6 +302,69 @@ server.serve_forever()
             lambda: self.client.call("center/message", {**msg, "body": "changed"}),
         )
 
+    def test_history_limits_cursor_validation_and_no_implicit_ack(self):
+        sent = []
+        for i in range(105):
+            sent.append(
+                self.client.call(
+                    "center/message",
+                    {
+                        "request_id": "page-message-" + str(i),
+                        "project": "os",
+                        "kind": "discussion",
+                        "body": "Bounded history fixture " + str(i),
+                    },
+                )["seq"]
+            )
+        default = self.client.call("center/history")
+        self.assertEqual(len(default["messages"]), 20)
+        page = self.client.call("center/history", query={"limit": 3})
+        self.assertEqual([row["seq"] for row in page["messages"]], sent[-3:][::-1])
+        self.assertTrue(page["has_more"])
+        self.assertEqual(page["next_before"], sent[-3])
+        self.assertTrue(all(row["read_at"] is None for row in page["messages"]))
+        self.client.call(
+            "center/message",
+            {
+                "request_id": "new-during-pages",
+                "project": "os",
+                "kind": "discussion",
+                "body": "New fixture arrival",
+            },
+        )
+        seen = [row["seq"] for row in page["messages"]]
+        while page["has_more"]:
+            page = self.client.call(
+                "center/history", query={"before": page["next_before"], "limit": 100}
+            )
+            self.assertLessEqual(len(page["messages"]), 100)
+            seen.extend(row["seq"] for row in page["messages"])
+        self.assertEqual(seen, sent[::-1])
+        self.assertIsNone(page["next_before"])
+        self.assertEqual(self.client.call("center/history", query={"before": 1})["messages"], [])
+        for query in (
+            {"after": 0},
+            {"unknown": 1},
+            {"limit": 0},
+            {"limit": 101},
+            {"limit": True},
+            {"limit": "3.0"},
+            {"before": -1},
+            {"before": 9223372036854775808},
+        ):
+            with self.subTest(query=query):
+                self.assert_code(
+                    "invalid_center_history_query",
+                    lambda: self.client.call("center/history", query=query),
+                )
+        self.assert_code(
+            "duplicate_query", lambda: self.client.call("center/history", query={"limit": [2, 3]})
+        )
+        mcp = client_module.invoke(
+            self.client, "aieyra_center", {"route": "history", "query": {"limit": 2}}
+        )
+        self.assertEqual(len(mcp["messages"]), 2)
+
     def test_memory_handoff_requires_live_session_and_survives_reconnection(self):
         self.assertEqual(self.client.call("memory")["memory"]["version"], 0)
         self.assert_code(
@@ -581,7 +644,11 @@ server.serve_forever()
         self.assertEqual(len(results), 3)
         self.assertEqual(results[0]["result"]["protocolVersion"], "2025-11-25")
         tool_names = [t["name"] for t in results[1]["result"]["tools"]]
-        self.assertEqual(len(tool_names), 19)
+        self.assertEqual(len(tool_names), 22)
+        self.assertTrue(
+            {"aieyra_notify_leader", "aieyra_leader_notifications", "aieyra_notification_ack"}
+            <= set(tool_names)
+        )
         self.assertEqual(len(set(tool_names)), len(tool_names))
         self.assertTrue(
             {

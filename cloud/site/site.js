@@ -84,7 +84,7 @@ if (location.pathname === '/auth/callback') {
       );
     }
   } else if (q.get('code') && q.get('flow')) {
-    say('授权已完成，请返回 Control；客户端会自动连接。');
+    say('授权已完成，请返回发起授权的应用；客户端会自动连接。');
     $('[data-login]').hidden = true;
   } else say('没有待完成的登录，请重新登录。');
 }

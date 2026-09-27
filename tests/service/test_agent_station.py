@@ -143,6 +143,59 @@ class StationTests(unittest.TestCase):
         self.assertEqual(resumed["session_id"], result["session_id"])
         self.assertEqual(resumed["coordination"]["status"], "unavailable")
 
+    def test_handoff_automatically_persists_leader_notice_once_after_response_loss(self):
+        token = secrets.token_urlsafe(32)
+        access = self.app.agent_access
+        access.enroll(
+            {"request_id": "leader-fixture", "name": "Leader", "project": "demo", "token": token}
+        )
+        leader = access.authenticate(token)
+        seat = access.seats(leader)["seats"][0]
+        self.app.hub.client.call(
+            "owner",
+            "/v1/governance-grant",
+            {
+                "request_id": "leader-grant",
+                "actor_id": leader["actor_id"],
+                "role": "leader",
+                "projects": ["demo"],
+                "expires_at": 0,
+                "version": 0,
+                "reason": "Fixture user appointment",
+            },
+        )
+        access.mutate(
+            leader,
+            "connect",
+            {
+                "request_id": "leader-join",
+                "session_id": "leader-session",
+                "seat_id": seat["id"],
+                "seat_epoch": seat["epoch"],
+                "native_session_id": "leader-native",
+            },
+        )
+        self.station.ensure("native-one")
+        self.station.finish("native-one")
+        original = self.station.client.call
+
+        def lost(route, body=None, query=None):
+            result = original(route, body, query)
+            if route == "station/notify-leader":
+                raise adapter.Error("network_response_lost")
+            return result
+
+        with patch.object(self.station.client, "call", side_effect=lost):
+            first = self.station.ensure("native-two")
+        self.assertEqual(first["leader_notification_error"], "network_response_lost")
+        second = self.station.ensure("native-two")
+        third = self.station.ensure("native-two")
+        self.assertEqual(second["leader_notification_id"], third["leader_notification_id"])
+        rows = self.app.station_notifications.read(leader)["notifications"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["native_session_id"], "leader-native")
+        self.assertEqual(self.station.doctor()["native_session_id"], "native-one")
+
     def test_concurrent_hooks_create_one_connection(self):
         def join(_):
             return adapter.Station(self.profile).ensure("native-one")["session_id"]
@@ -410,6 +463,300 @@ class StationTests(unittest.TestCase):
         adapter.atomic(self.profile, profile)
         with self.assertRaises(adapter.Error):
             adapter.Station(self.profile)
+
+    def create(self, **changes):
+        options = {
+            "profile_path": self.root / "new-station.json",
+            "name": "New Agent 新成员",
+            "project": "demo",
+            "root": self.project,
+            "host": "generic",
+            "native": "new-native",
+            "port": self.server.server_address[1],
+            "lease": False,
+        }
+        options.update(changes)
+        return adapter.create_station(**options)
+
+    def test_create_enrolls_own_station_and_joins_without_installing(self):
+        result = self.create()
+        self.assertEqual(result["status"], "connected")
+        self.assertEqual(result["native_session_id"], "new-native")
+        self.assertNotEqual(result["actor_id"], self.station.p["actor_id"])
+        self.assertNotEqual(result["seat_id"], self.station.p["seat_id"])
+        profile = adapter.read_json(result["profile"])
+        config = adapter.read_json(result["config_file"])
+        self.assertNotIn("token", profile)
+        self.assertNotIn(config["token"], json.dumps(result))
+        self.assertNotIn(config["token"], (self.root / "new-station.state/create.json").read_text())
+        self.assertFalse((self.project / "AGENTS.md").exists())
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+        same = self.create(resume=True)
+        self.assertEqual(same["session_id"], result["session_id"])
+        self.assertEqual(same["enrollment_request_id"], result["enrollment_request_id"])
+        adapter.Station(result["profile"]).finish("new-native")
+        rejoined = adapter.Station(result["profile"]).ensure("new-native")
+        self.assertEqual(rejoined["seat_id"], result["seat_id"])
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_create_lost_enrollment_response_resumes_original_identity(self):
+        enroll = adapter.ENROLL.enroll
+
+        def lost(*args, **kwargs):
+            enroll(*args, **kwargs)
+            raise OSError("response lost")
+
+        with patch.object(adapter.ENROLL, "enroll", side_effect=lost):
+            with self.assertRaisesRegex(adapter.Error, "retry_create_with_resume"):
+                self.create()
+        config = self.root / "new-station.state/credential.json"
+        original = config.read_bytes()
+        self.assertFalse((self.root / "new-station.json").exists())
+        result = self.create(resume=True)
+        self.assertEqual(result["status"], "connected")
+        self.assertEqual(config.read_bytes(), original)
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_create_resumes_after_profile_publication_failure(self):
+        save = adapter.ENROLL.save_new
+
+        def fail_profile(path, value):
+            if Path(path).name == "new-station.json":
+                raise OSError("disk unavailable")
+            save(path, value)
+
+        with patch.object(adapter.ENROLL, "save_new", side_effect=fail_profile):
+            with self.assertRaises(OSError):
+                self.create()
+        self.assertFalse((self.root / "new-station.json").exists())
+        result = self.create(resume=True)
+        self.assertEqual(result["status"], "connected")
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_create_resumes_after_join_interruption_without_enrolling(self):
+        with patch.object(adapter.Station, "ensure", side_effect=OSError("interrupted")):
+            with self.assertRaises(OSError):
+                self.create()
+        profile = (self.root / "new-station.json").read_bytes()
+        with patch.object(adapter.ENROLL, "enroll", side_effect=AssertionError("duplicate enroll")):
+            result = self.create(resume=True)
+        self.assertEqual(result["status"], "connected")
+        self.assertEqual((self.root / "new-station.json").read_bytes(), profile)
+
+    def test_create_keeps_unknown_connect_intent_without_replay(self):
+        call = adapter.CLIENT.AgentClient.call
+        attempts = []
+
+        def unavailable(client, route, body=None, query=None):
+            if route == "connect" or route.startswith(("sessions/", "requests/")):
+                attempts.append(route)
+                raise adapter.Error("connection_unconfirmed_query_original_request")
+            return call(client, route, body, query)
+
+        with patch.object(adapter.CLIENT.AgentClient, "call", new=unavailable):
+            first = self.create()
+            second = self.create(resume=True)
+        self.assertEqual(first["status"], "connect_unconfirmed")
+        self.assertEqual(second["request_id"], first["request_id"])
+        self.assertEqual(second["session_id"], first["session_id"])
+        self.assertEqual(attempts.count("connect"), 1)
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_create_concurrent_resumes_share_one_identity_and_connection(self):
+        with patch.object(adapter.ENROLL, "enroll", side_effect=OSError("offline")):
+            with self.assertRaises(adapter.Error):
+                self.create()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: self.create(resume=True), range(2)))
+        self.assertEqual(results[0]["session_id"], results[1]["session_id"])
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_create_refuses_existing_profile_and_changed_retry_parameters(self):
+        original = self.profile.read_bytes()
+        with self.assertRaisesRegex(adapter.Error, "station_profile_exists"):
+            self.create(profile_path=self.profile)
+        with self.assertRaisesRegex(adapter.Error, "intent_missing"):
+            self.create(profile_path=self.profile, resume=True)
+        self.assertEqual(self.profile.read_bytes(), original)
+        self.create()
+        for change in ({"name": "Other"}, {"host": "codex"}, {"native": "other-native"}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(adapter.Error, "resume_mismatch"):
+                    self.create(resume=True, **change)
+        with self.assertRaisesRegex(adapter.Error, "station_profile_exists"):
+            self.create()
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_create_refuses_modified_profile_on_resume(self):
+        result = self.create()
+        profile = adapter.read_json(result["profile"])
+        profile["actor_id"] = self.station.p["actor_id"]
+        adapter.atomic(result["profile"], profile)
+        with self.assertRaisesRegex(adapter.Error, "profile_conflict"):
+            self.create(resume=True)
+
+    def test_created_station_requires_explicit_handoff_for_new_native(self):
+        result = self.create()
+        station = adapter.Station(result["profile"])
+        station.finish("new-native")
+        self.assertEqual(station.ensure("different-native")["status"], "handoff_required")
+        self.assertEqual(station.seat()["station_binding"]["native_session_id"], "new-native")
+
+    def test_new_os_agents_create_distinct_stations_without_existing_credentials(self):
+        first = self.create(host="os", native="os-runtime-new-agent-one")
+        second = self.create(
+            profile_path=self.root / "os-agent-two.json",
+            name="OS Agent Two",
+            host="os",
+            native="os-runtime-new-agent-two",
+        )
+        self.assertEqual(first["status"], "connected")
+        self.assertEqual(second["status"], "connected")
+        self.assertNotEqual(first["actor_id"], second["actor_id"])
+        self.assertNotEqual(first["seat_id"], second["seat_id"])
+        self.assertNotEqual(first["session_id"], second["session_id"])
+        self.assertTrue(first["session_id"].startswith("station-os-"))
+        for result in (first, second):
+            station = adapter.Station(result["profile"])
+            own = station.client.call("info")
+            self.assertEqual(own["actor_id"], result["actor_id"])
+            self.assertEqual(
+                station.client.call("inbox", query={"session_id": result["session_id"]})[
+                    "deliveries"
+                ],
+                [],
+            )
+            self.assertEqual(
+                station.client.call("memory", query={"project": "demo"})["memory"]["version"], 0
+            )
+            self.assertEqual(len(station.client.call("seats")["seats"]), 1)
+            self.assertTrue(station.finish(result["native_session_id"])["lease_released"])
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 3)
+
+    def test_create_rejects_invalid_arguments_before_enrollment(self):
+        for change in (
+            {"native": ""},
+            {"project": "bad/project"},
+            {"port": 65536},
+            {"name": " "},
+            {"host": "unsupported"},
+            {"root": self.root / "missing"},
+        ):
+            with self.subTest(change=change):
+                with self.assertRaises(adapter.Error):
+                    self.create(**change)
+        self.assertFalse((self.root / "new-station.state").exists())
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 1)
+
+    def test_create_reports_unknown_project_without_registering_or_joining(self):
+        with self.assertRaises(adapter.Error) as raised:
+            self.create(project="unregistered")
+        self.assertEqual(raised.exception.code, "unknown_project")
+        self.assertFalse((self.root / "new-station.json").exists())
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 1)
+
+    def test_create_allows_explicit_worktree_without_changing_project_registration(self):
+        worktree = self.root / "another worktree"
+        worktree.mkdir()
+        result = self.create(root=worktree)
+        self.assertEqual(adapter.Station(result["profile"]).root, worktree)
+        projects = self.station.client.call("center/registry")["projects"]
+        project = next(p for p in projects if p["id"] == "demo")
+        self.assertEqual(Path(project["root"]), self.project)
+
+    def test_private_json_publication_failure_leaves_no_partial_credential(self):
+        with patch.object(adapter.ENROLL.os, "link", side_effect=OSError("unavailable")):
+            with self.assertRaises(adapter.Error):
+                self.create()
+        self.assertFalse((self.root / "new-station.state/credential.json").exists())
+        self.assertEqual(list((self.root / "new-station.state").glob("*.tmp")), [])
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 1)
+        self.assertEqual(self.create(resume=True)["status"], "connected")
+
+    def test_create_cli_uses_new_profile_and_reports_no_token(self):
+        args = [
+            os.sys.executable,
+            "-X",
+            "utf8",
+            str(ROOT / "scripts/agent-station.py"),
+            "--profile",
+            str(self.root / "cli-station.json"),
+            "create",
+            "--name",
+            "CLI Agent",
+            "--project",
+            "demo",
+            "--root",
+            str(self.project),
+            "--host",
+            "generic",
+            "--native-session-id",
+            "cli-native",
+            "--port",
+            str(self.server.server_address[1]),
+            "--no-lease",
+        ]
+        run = subprocess.run(
+            args,
+            capture_output=True,
+            timeout=20,
+            text=True,
+            encoding="utf-8",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertEqual(run.returncode, 0, run.stderr + run.stdout)
+        result = json.loads(run.stdout)
+        self.assertEqual(result["status"], "connected")
+        token = adapter.read_json(result["config_file"])["token"]
+        self.assertNotIn(token, run.stdout + run.stderr)
+        again = subprocess.run(
+            args + ["--resume"],
+            capture_output=True,
+            timeout=20,
+            text=True,
+            encoding="utf-8",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertEqual(again.returncode, 0, again.stderr + again.stdout)
+        self.assertEqual(json.loads(again.stdout)["session_id"], result["session_id"])
+
+    def test_enrollment_cli_still_resumes_original_request(self):
+        args = [
+            os.sys.executable,
+            "-X",
+            "utf8",
+            str(ROOT / "scripts/enroll-agent.py"),
+            "--name",
+            "Bootstrap",
+            "--project",
+            "demo",
+            "--output",
+            str(self.root / "cli.json"),
+            "--port",
+            str(self.server.server_address[1]),
+        ]
+        outputs = []
+        for suffix in ([], ["--resume"]):
+            run = subprocess.run(
+                args + suffix,
+                capture_output=True,
+                timeout=20,
+                text=True,
+                encoding="utf-8",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            self.assertEqual(run.returncode, 0, run.stderr + run.stdout)
+            outputs.append(json.loads(run.stdout))
+        self.assertEqual(outputs[0]["credential"], outputs[1]["credential"])
+        self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
+
+    def test_private_json_publication_never_overwrites_existing_bytes(self):
+        path = self.root / "existing.json"
+        path.write_bytes(b"original")
+        with self.assertRaises(FileExistsError):
+            adapter.ENROLL.save_new(path, {"token": "replacement"})
+        self.assertEqual(path.read_bytes(), b"original")
+        self.assertEqual(list(self.root.glob("existing.json.*.tmp")), [])
 
 
 if __name__ == "__main__":

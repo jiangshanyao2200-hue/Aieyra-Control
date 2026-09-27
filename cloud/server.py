@@ -74,6 +74,8 @@ class Cloud(FeedbackStore, MatrixStore):
             CREATE TABLE IF NOT EXISTS requests(subject TEXT NOT NULL,id TEXT NOT NULL,digest TEXT NOT NULL,seq INTEGER NOT NULL,PRIMARY KEY(subject,id));
             CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY,start REAL NOT NULL,count INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS blocked(subject TEXT PRIMARY KEY,reason TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS auth_flow_products(flow TEXT PRIMARY KEY,product TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS auth_session_products(session TEXT PRIMARY KEY,product TEXT NOT NULL);
             """)
         self.init_feedback()
         self.init_matrix()
@@ -144,22 +146,36 @@ class Cloud(FeedbackStore, MatrixStore):
             d.execute("DELETE FROM limits WHERE start<?", (now - 86400,))
 
     def start(self, b):
-        if set(b) not in (
-            {"challenge", "redirect_uri", "scope", "state"},
-            {"challenge", "redirect_uri", "scope", "state", "public_key"},
-        ):
+        feedback = b.get("scope") == "feedback"
+        allowed_fields = (
+            ({"challenge", "redirect_uri", "scope", "state", "product"},)
+            if feedback
+            else (
+                {"challenge", "redirect_uri", "scope", "state"},
+                {"challenge", "redirect_uri", "scope", "state", "public_key"},
+            )
+        )
+        if set(b) not in allowed_fields:
             raise Error("invalid_login_fields")
+        product = b["product"] if feedback else "aieyra-control"
+        if feedback and product != "aieyra-os":
+            raise Error("invalid_feedback_product")
         key = public_key(b["public_key"]) if "public_key" in b else None
         if key and b["scope"] != "desktop":
             raise Error("matrix_native_agent_required", 403)
         check(b["challenge"], r"[A-Za-z0-9_-]{43}")
         check(b["state"])
-        if b["redirect_uri"] not in CALLBACKS or b["scope"] not in ("browser", "desktop"):
+        if (
+            b["redirect_uri"] not in tuple(CALLBACKS)
+            or b["scope"] not in ("browser", "desktop", "feedback")
+            or (feedback and b["redirect_uri"] != CLOUD + "/auth/callback")
+        ):
             raise Error("invalid_redirect")
         flow = secrets.token_urlsafe(32)
         with self.db() as d:
             d.execute("DELETE FROM flows WHERE expires<?", (time.time() - 300,))
             d.execute("DELETE FROM matrix_flow_keys WHERE flow NOT IN (SELECT id FROM flows)")
+            d.execute("DELETE FROM auth_flow_products WHERE flow NOT IN (SELECT id FROM flows)")
             d.execute(
                 "INSERT INTO flows(id,challenge,redirect,scope,state,expires) VALUES(?,?,?,?,?,?)",
                 (
@@ -173,11 +189,25 @@ class Cloud(FeedbackStore, MatrixStore):
             )
             if key:
                 d.execute("INSERT INTO matrix_flow_keys VALUES(?,?)", (flow, key))
+            d.execute("INSERT INTO auth_flow_products VALUES(?,?)", (flow, product))
         return {
             "flow_id": flow,
             "authorize_url": API + "/aieyra/control/authorize?flow=" + flow,
             "expires_in": 300,
+            "scope": b["scope"],
+            "product": product,
         }
+
+    @staticmethod
+    def flow_product(db, flow):
+        if flow["scope"] in ("desktop", "browser"):
+            return "aieyra-control"
+        row = db.execute(
+            "SELECT product FROM auth_flow_products WHERE flow=?", (flow["id"],)
+        ).fetchone()
+        if flow["scope"] != "feedback" or not row or row["product"] != "aieyra-os":
+            raise Error("login_verification_failed", 401)
+        return row["product"]
 
     def authorize(self, flow, cookie):
         with self.db() as d:
@@ -223,6 +253,7 @@ class Cloud(FeedbackStore, MatrixStore):
                 or b["redirect_uri"] != r["redirect"]
             ):
                 raise Error("login_verification_failed", 401)
+            product = self.flow_product(d, r)
             who = json.loads(r["identity"])
             token = secrets.token_urlsafe(32)
             expires = time.time() + 86400
@@ -237,7 +268,14 @@ class Cloud(FeedbackStore, MatrixStore):
                 "INSERT INTO matrix_session_keys SELECT ?,public_key FROM matrix_flow_keys WHERE flow=?",
                 (digest(token), r["id"]),
             )
-        return {"access_token": token, "expires_at": expires, "user": who, "scope": r["scope"]}
+            d.execute("INSERT INTO auth_session_products VALUES(?,?)", (digest(token), product))
+        return {
+            "access_token": token,
+            "expires_at": expires,
+            "user": who,
+            "scope": r["scope"],
+            "product": product,
+        }
 
     def poll(self, b):
         if set(b) != {"flow_id", "verifier", "state"}:
@@ -247,7 +285,7 @@ class Cloud(FeedbackStore, MatrixStore):
             r = d.execute("SELECT * FROM flows WHERE id=?", (check(b["flow_id"]),)).fetchone()
             if (
                 not r
-                or r["scope"] != "desktop"
+                or r["scope"] not in ("desktop", "feedback")
                 or r["expires"] <= time.time()
                 or r["used"]
                 or not hmac.compare_digest(
@@ -256,6 +294,7 @@ class Cloud(FeedbackStore, MatrixStore):
                 or not hmac.compare_digest(r["state"], check(b["state"]))
             ):
                 raise Error("login_verification_failed", 401)
+            product = self.flow_product(d, r)
             if not r["identity"]:
                 return {"pending": True}
             who = json.loads(r["identity"])
@@ -266,13 +305,20 @@ class Cloud(FeedbackStore, MatrixStore):
             d.execute("UPDATE flows SET used=1 WHERE id=?", (r["id"],))
             d.execute(
                 "INSERT INTO sessions VALUES(?,?,?,?,?,0)",
-                (digest(token), who["subject"], who["name"], "desktop", expires),
+                (digest(token), who["subject"], who["name"], r["scope"], expires),
             )
             d.execute(
                 "INSERT INTO matrix_session_keys SELECT ?,public_key FROM matrix_flow_keys WHERE flow=?",
                 (digest(token), r["id"]),
             )
-        return {"access_token": token, "expires_at": expires, "user": who, "scope": "desktop"}
+            d.execute("INSERT INTO auth_session_products VALUES(?,?)", (digest(token), product))
+        return {
+            "access_token": token,
+            "expires_at": expires,
+            "user": who,
+            "scope": r["scope"],
+            "product": product,
+        }
 
     def session(self, token):
         with self.db() as d:
@@ -285,7 +331,20 @@ class Cloud(FeedbackStore, MatrixStore):
                 or d.execute("SELECT 1 FROM blocked WHERE subject=?", (r["subject"],)).fetchone()
             ):
                 raise Error("login_required", 401)
-        return dict(r)
+            product = "aieyra-control"
+            if r["scope"] == "feedback":
+                binding = d.execute(
+                    "SELECT product FROM auth_session_products WHERE session=?", (r["hash"],)
+                ).fetchone()
+                if not binding or binding["product"] != "aieyra-os":
+                    raise Error("login_required", 401)
+                product = binding["product"]
+        return {**dict(r), "product": product}
+
+    @staticmethod
+    def require_product_access(session):
+        if session["scope"] not in ("desktop", "browser"):
+            raise Error("session_scope_denied", 403)
 
     def feed(self):
         with self.db() as d:
@@ -510,6 +569,7 @@ class Handler(BaseHTTPRequestHandler):
     def artifact(self, path):
         token = self.token()
         session = self.server.app.session(token)
+        self.server.app.require_product_access(session)
         with self.server.app.capacity("download", session["subject"], 3, 16):
             return self.send_artifact(path, token)
 
@@ -587,6 +647,7 @@ class Handler(BaseHTTPRequestHandler):
     def release_events(self):
         token = self.token()
         session = self.server.app.session(token)
+        self.server.app.require_product_access(session)
         with self.server.app.capacity("stream", session["subject"], 2, 20):
             return self.send_events(token)
 
@@ -688,6 +749,12 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/v1/auth/poll":
                     return self.respond(200, app.poll(b))
                 session = app.session(self.token())
+                if session["scope"] == "feedback" and path not in (
+                    "/v1/feedback/channel",
+                    "/v1/feedback",
+                    "/v1/auth/logout",
+                ):
+                    raise Error("session_scope_denied", 403)
                 if path.startswith("/v1/matrix/"):
                     app.matrix_proof(session, path, raw, self.headers)
                     return self.respond(200, app.matrix_write(session, path, b))
@@ -710,7 +777,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.respond(200, app.post(session, b))
                 raise Error("not_found", 404)
             if path == "/healthz":
-                return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.4"})
+                return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.5"})
+            if path == "/v1/feedback/capabilities":
+                return self.respond(200, app.feedback_capabilities())
             if path.startswith("/v1/matrix/"):
                 session = (
                     app.session(self.token())
@@ -744,6 +813,7 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "user": {"subject": s["subject"], "name": s["name"]},
                         "scope": s["scope"],
+                        "product": s["product"],
                         "expires_at": s["expires"],
                     },
                 )
@@ -752,7 +822,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/v1/releases/events":
                 return self.release_events()
             if path == "/v1/releases/stable":
-                app.session(self.token())
+                app.require_product_access(app.session(self.token()))
                 target = app.data / "releases/stable.json"
                 if not target.exists():
                     return self.respond(200, {"available": False})
