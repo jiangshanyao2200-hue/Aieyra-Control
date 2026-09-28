@@ -7,6 +7,7 @@ import ipaddress
 import json
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 BLOCKED = {
@@ -22,7 +23,7 @@ BLOCKED = {
     "history",
 }
 SENSITIVE = re.compile(
-    rb"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{24,}|\bAKIA[A-Z0-9]{16}\b|\bxox[baprs]-[A-Za-z0-9-]{15,}"
+    rb"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{24,}|\bAKIA[A-Z0-9]{16}\b|\bxox[baprs]-[A-Za-z0-9-]{15,}"
 )
 BINARY_ASSETS = {
     "desktop/assets/icon.png": "f63b931ca21255532059af9e26bcc444ed738bf770ab003ed4b0553ab6a80cba",
@@ -69,12 +70,36 @@ EXAMPLE_ROOTS = {
     "secret_key",
 }
 EXAMPLE_USERS = {"example", "user", "private", "test", "fixture", "username"}
+DOCUMENTATION_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32")
+)
+IPV6_LITERAL = re.compile(
+    r"(?<![\w:])[0-9a-fA-F]*(?::[0-9a-fA-F]*){2,}(?:\.[0-9.]+)?"
+    r"(?:%[A-Za-z0-9_.-]+)?(?![\w:])"
+)
+
+
+def is_documentation_address(address):
+    """Only loopback, wildcard binds and reserved documentation are exempt."""
+    if address.version == 6 and address.ipv4_mapped:
+        return is_documentation_address(address.ipv4_mapped)
+    return (
+        address.is_loopback
+        or address.is_unspecified
+        or any(
+            address.version == network.version and address in network
+            for network in DOCUMENTATION_NETWORKS
+        )
+    )
 
 
 def validate_public_files(files):
     """Fail closed on known private metadata forms; never print matched values."""
     for name, raw in files.items():
         parts = Path(name).parts
+        if any(part.casefold() == ".env" or part.casefold().startswith(".env.") for part in parts):
+            raise ValueError("private_environment_path_in_" + name)
         if set(parts) & BLOCKED or Path(name).is_absolute() or ".." in parts:
             raise ValueError("private_artifact_path_in_" + name)
         if Path(name).suffix in {".png", ".ico"}:
@@ -92,7 +117,7 @@ def validate_public_files(files):
             lambda m: chr(int(m.group(1) or m.group(2), 16)),
             text,
         )
-        text = text.replace(r"\/", "/")
+        text = unquote(text.replace(r"\/", "/"))
         if SENSITIVE.search(text.encode("utf-8", errors="surrogatepass")):
             raise ValueError("sensitive_content_in_" + name)
         if any(
@@ -124,8 +149,15 @@ def validate_public_files(files):
                 address = ipaddress.ip_address(candidate)
             except ValueError:
                 continue
-            if address.is_global:
-                raise ValueError("public_ip_literal_in_" + name)
+            if not is_documentation_address(address):
+                raise ValueError("unreviewed_ip_literal_in_" + name)
+        for match in IPV6_LITERAL.finditer(normalized):
+            try:
+                address = ipaddress.IPv6Address(match.group())
+            except ValueError:
+                continue
+            if not is_documentation_address(address):
+                raise ValueError("unreviewed_ip_literal_in_" + name)
 
 
 def sources(include_development=False):

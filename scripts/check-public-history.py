@@ -22,6 +22,26 @@ def check_history(repository):
         raise ValueError("public_history_has_no_commits")
     paths = {}
     failures = []
+    tags = set()
+    for row in (
+        git("for-each-ref", "--format=%(objecttype) %(objectname)", "refs/tags")
+        .decode()
+        .splitlines()
+    ):
+        kind, oid = row.split()
+        while kind == "tag" and oid not in tags:
+            tags.add(oid)
+            raw = git("cat-file", "tag", oid)
+            try:
+                exporter.validate_public_files({"tag-message.txt": raw})
+            except (ValueError, UnicodeError) as error:
+                failures.append({"tag": oid, "rule": str(error)})
+            headers = dict(
+                line.split(b" ", 1)
+                for line in raw.split(b"\n\n", 1)[0].splitlines()
+                if b" " in line
+            )
+            kind, oid = headers[b"type"].decode(), headers[b"object"].decode()
     for commit in commits:
         try:
             exporter.validate_public_files(
@@ -69,7 +89,12 @@ def check_history(repository):
                         exporter.validate_public_files({"baseline-payload.json": payload})
             except (ValueError, UnicodeError) as error:
                 failures.append({"path": name, "blob": oid, "rule": str(error)})
-    return {"commits": len(commits), "blobs": len(objects), "failures": failures}
+    return {
+        "commits": len(commits),
+        "annotated_tags": len(tags),
+        "blobs": len(objects),
+        "failures": failures,
+    }
 
 
 if __name__ == "__main__":

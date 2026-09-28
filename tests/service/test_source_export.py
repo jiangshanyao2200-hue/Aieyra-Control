@@ -3,6 +3,8 @@
 import importlib.util
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +39,7 @@ class SourceExportTests(unittest.TestCase):
             "/root/" + "private-" + "deployment/config.json",
             "AKIA" + "ABCD" * 4,
             "xoxb-" + "synthetic" * 4,
+            "-----BEGIN " + "ENCRYPTED PRIVATE KEY-----",
         ]
         for value in cases:
             with self.subTest(kind=cases.index(value)):
@@ -55,8 +58,36 @@ class SourceExportTests(unittest.TestCase):
             r"/(?:Users|home)/([^\s]+)",
             "127.0.0.1",
             "192.0.2.1",
+            "https://[2001:db8::1]/example",
+            "http://[::1]/",
+            "::",
+            "::ffff:127.0.0.1",
+            "10.12.4",
         ]:
             exporter.validate_public_files({"docs/example.md": value.encode()})
+
+    def test_internal_and_ipv6_server_literals_are_rejected(self):
+        addresses = [
+            ".".join(map(str, parts))
+            for parts in ((10, 23, 45, 67), (172, 20, 4, 9), (192, 168, 3, 4), (100, 64, 1, 2))
+        ]
+        addresses += [
+            ":".join(("2001", "4860", "4860", "", "8888")),
+            ":".join(("fd12", "3456", "789a", "", "1")),
+            ":".join(("fe80", "", "abcd")) + "%eth0",
+            "::ffff:" + addresses[0],
+        ]
+        for address in addresses:
+            for value in (
+                address,
+                "https://[" + address + "]/api",
+                address.replace(":", r"\u003a").replace(".", r"\u002e"),
+                address.replace(":", "%3A").replace(".", "%2E"),
+            ):
+                with self.subTest(address_index=addresses.index(address)):
+                    with self.assertRaises(ValueError) as caught:
+                        exporter.validate_public_files({"docs/example.md": value.encode()})
+                    self.assertNotIn(address, str(caught.exception))
 
     def test_test_artifacts_and_unreviewed_images_cannot_be_exported(self):
         for name in [
@@ -66,6 +97,9 @@ class SourceExportTests(unittest.TestCase):
             "data/account.json",
             "desktop/assets/unreviewed.jpg",
             "desktop/assets/icon.png",
+            ".env",
+            "cloud/.env.production",
+            "cloud/.ENV.local",
         ]:
             with self.subTest(path=name), self.assertRaises(ValueError):
                 exporter.validate_public_files({name: b"fixture"})
@@ -130,6 +164,35 @@ class SourceExportTests(unittest.TestCase):
             "cloud-design.mjs",
         ):
             self.assertTrue((ROOT / "tests/web" / name).is_file())
+
+    def test_annotated_tag_metadata_is_checked(self):
+        history_spec = importlib.util.spec_from_file_location(
+            "history_privacy_checks", ROOT / "scripts/check-public-history.py"
+        )
+        history = importlib.util.module_from_spec(history_spec)
+        history_spec.loader.exec_module(history)
+        with tempfile.TemporaryDirectory() as directory:
+
+            def git(*args):
+                return subprocess.check_output(
+                    ["git", "-C", directory, *args], stderr=subprocess.STDOUT
+                )
+
+            git("init", "-q")
+            git("config", "user.name", "Fixture")
+            git("config", "user.email", "fixture@example.test")
+            (Path(directory) / "README.md").write_text(
+                "Synthetic public fixture\n", encoding="utf-8"
+            )
+            git("add", "README.md")
+            git("commit", "-qm", "Fixture commit")
+            address = ".".join(map(str, (10, 23, 45, 67)))
+            git("tag", "-a", "fixture-tag", "-m", "Internal endpoint " + address)
+            result = history.check_history(Path(directory))
+            self.assertEqual(result["annotated_tags"], 1)
+            self.assertEqual(len(result["failures"]), 1)
+            self.assertIn("tag", result["failures"][0])
+            self.assertNotIn(address, str(result["failures"]))
 
 
 if __name__ == "__main__":
