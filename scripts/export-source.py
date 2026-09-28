@@ -52,7 +52,7 @@ WINDOWS_PATH = re.compile(r"(?<![\w\\])([A-Za-z]):[\\/]+([^\s\"'<>`|]+)")
 HOME_PATH = re.compile(r"/(?:Users|home)/([A-Za-z0-9_.-]+)(?:[/\\]|\b)")
 OPERATIONS_PATH = re.compile(r"/(?:root|srv|opt)/([A-Za-z0-9_.-]+)(?:[/\\]|\b)")
 STATION_ID = re.compile(
-    r"\b(?:agent-[a-f0-9]{16}|ext-seat-[a-f0-9]{24}|station-(?:generic|codex)-[a-f0-9]{32})\b",
+    r"\b(?:agent-[a-f0-9]{16}|ext-(?:seat|host|adapter)-[a-f0-9]{24}|station-[a-z0-9_.-]+-[a-f0-9]{32})\b",
     re.I,
 )
 NATIVE_THREAD = re.compile(
@@ -115,6 +115,7 @@ def validate_public_files(files):
             if match.group(1).casefold() not in EXAMPLE_USERS:
                 raise ValueError("home_path_literal_in_" + name)
         for match in OPERATIONS_PATH.finditer(text):
+            # Public container default, not a machine-specific installation path.
             if match.group(1).casefold() not in {"example", "fixture", "product", "aieyra-control"}:
                 raise ValueError("operations_path_literal_in_" + name)
         normalized = text.replace(r"\.", ".").replace("[.]", ".")
