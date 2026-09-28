@@ -348,13 +348,15 @@ TOOLS = [
     ),
     (
         "aieyra_memory",
-        "Read project blueprint, timeline, checkpoint, recovery and index before starting work. History and previous revisions remain available.",
+        "Read five project memory sections. Paired if_version/if_sha256 check latest only: not_modified=true omits sections, so retain your already-read matching content. History and revisions remain available.",
         schema(
             {
                 "project": STR,
                 "version": {"type": "integer"},
                 "history": {"type": "boolean"},
                 "before": {"type": "integer"},
+                "if_version": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+                "if_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
             }
         ),
     ),
@@ -434,7 +436,7 @@ TOOLS = [
     ),
     (
         "aieyra_center",
-        "Call native center routes from aieyra_info. All calls use this worker identity. Writes require a stable request_id inside body.",
+        "Call native center routes from aieyra_info as this worker. History/inbox optionally filter project and include_coordination=1; follow returned cursors with the same filter, including empty legacy_scan pages. Reads do not ACK. Writes require a stable request_id inside body.",
         schema({"route": STR, "body": {"type": "object"}, "query": {"type": "object"}}, ("route",)),
     ),
 ]
@@ -592,6 +594,77 @@ def mcp(client, input_stream=None, output_stream=None):
         client.close()
 
 
+def memory_readback(client, previous):
+    """Check this operation's already-read revision; never reuse a persistent cache."""
+    saved = previous["memory"]
+    version, digest = saved.get("version"), saved.get("sha256")
+    if (
+        type(version) is not int
+        or not 1 <= version <= 2147483647
+        or not isinstance(digest, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", digest)
+    ):
+        return client.call("memory")
+    try:
+        result = client.call(
+            "memory",
+            query={"project": saved["project"], "if_version": version, "if_sha256": digest},
+        )
+    except ClientError as error:
+        # Only an explicit older endpoint's parameter rejection permits one
+        # compatibility read. Never retry auth, network or unknown failures.
+        if error.status != 400 or error.code != "invalid_memory_query":
+            raise
+        return client.call("memory")
+    if not isinstance(result, dict) or (
+        "not_modified" in result and type(result["not_modified"]) is not bool
+    ):
+        raise ClientError("invalid_memory_conditional_response")
+    if result.get("not_modified") is True:
+        metadata = result.get("memory")
+        if (
+            result.get("conditional_read") != "version_and_sha256"
+            or not isinstance(metadata, dict)
+            or any(metadata.get(k) != saved[k] for k in ("project", "version", "sha256"))
+            or type(metadata.get("version")) is not int
+            or result.get("current_version") != version
+            or type(result.get("current_version")) is not int
+            or "sections" in metadata
+            or "missing_sections" in result
+        ):
+            raise ClientError("invalid_memory_conditional_response")
+        return {
+            **result,
+            "memory": {**saved, **metadata},
+            "missing_sections": previous["missing_sections"],
+        }
+    if "not_modified" in result:
+        current = result.get("memory")
+        sections = current.get("sections") if isinstance(current, dict) else None
+        order = ("blueprint", "timeline", "checkpoint", "recovery", "index")
+        if (
+            result.get("conditional_read") != "version_and_sha256"
+            or not isinstance(current, dict)
+            or current.get("project") != saved["project"]
+            or type(current.get("version")) is not int
+            or not 0 <= current["version"] <= 2147483647
+            or type(result.get("current_version")) is not int
+            or current["version"] != result.get("current_version")
+            or (
+                current.get("sha256") is not None
+                if current["version"] == 0
+                else not isinstance(current.get("sha256"), str)
+                or not re.fullmatch(r"[a-f0-9]{64}", current["sha256"])
+            )
+            or not isinstance(sections, dict)
+            or set(sections) != set(order)
+            or any(not isinstance(v, str) for v in sections.values())
+            or result.get("missing_sections") != [k for k in order if not sections[k].strip()]
+        ):
+            raise ClientError("invalid_memory_conditional_response")
+    return result
+
+
 def finish_session(client, session_id, request_id):
     """Read back saved memory and unresolved work, then release only this transport."""
     before = client.call("sessions/" + session_id)["session"]
@@ -610,7 +683,7 @@ def finish_session(client, session_id, request_id):
             # never replay, reconnect or claim success from the exception alone.
             disconnect_error = error.code
     after = client.call("sessions/" + session_id)["session"]
-    memory_after = client.call("memory")
+    memory_after = memory_readback(client, memory_before)
     saved = memory_after["memory"]
     return {
         "session_id": session_id,
@@ -742,6 +815,8 @@ def main():
     p.add_argument("--version", type=int)
     p.add_argument("--history", action="store_true")
     p.add_argument("--before", type=int)
+    p.add_argument("--if-version", type=int)
+    p.add_argument("--if-sha256")
     p = sub.add_parser("memory-save")
     p.add_argument("--body-file", type=Path, required=True)
     p = sub.add_parser("connect")
@@ -819,7 +894,7 @@ def main():
         elif args.command == "memory":
             fields = {
                 key: getattr(args, key)
-                for key in ("project", "version", "before")
+                for key in ("project", "version", "before", "if_version", "if_sha256")
                 if getattr(args, key) is not None
             }
             if args.history:

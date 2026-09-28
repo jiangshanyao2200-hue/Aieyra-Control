@@ -53,7 +53,7 @@ from growth import Growth
 from local_hub import create_local_hub
 from paths import shared_directory, configuration_file, initialize as initialize_paths
 
-VERSION = "0.6.5"
+VERSION = "0.6.6"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -916,6 +916,14 @@ class Handler(BaseHTTPRequestHandler):
                 "center_reads": sorted(AGENT_READS),
                 "center_writes": sorted(AGENT_WRITES),
                 "os_primary": True,
+                "center_stream": {
+                    "scope": "project_view",
+                    "epoch": "persistent_database_and_view"
+                    if getattr(self.server.app.hub, "is_local", False)
+                    else "unavailable",
+                    "expected_epoch_query": "stream_epoch",
+                    "automatic_cursor_reset": False,
+                },
                 "lease_seconds": 90,
                 "openapi": "/api/agent-openapi",
                 "leader_notifications": {
@@ -933,6 +941,7 @@ class Handler(BaseHTTPRequestHandler):
                     "write": "memory",
                     "history": "memory?project=" + peer["project"] + "&history=1",
                     "storage": "local_control",
+                    "conditional_read": "version_and_sha256",
                 },
             }
         if path == "cloud/status":
@@ -993,9 +1002,14 @@ class Handler(BaseHTTPRequestHandler):
         raise AgentError("agent_route_not_supported", 404)
 
     def memory_get(self, query, project=None):
-        if set(query) - {"project", "version", "history", "before"} or any(
-            len(v) != 1 for v in query.values()
-        ):
+        if set(query) - {
+            "project",
+            "version",
+            "history",
+            "before",
+            "if_version",
+            "if_sha256",
+        } or any(len(v) != 1 for v in query.values()):
             raise MemoryError("invalid_memory_query")
         memory = self.server.app.project_memory
         project = project or query.get("project", [""])[0]
@@ -1004,6 +1018,18 @@ class Handler(BaseHTTPRequestHandler):
                 raise MemoryError("memory_project_required")
             return memory.listing()
         try:
+            if "if_version" in query or "if_sha256" in query:
+                if (
+                    not {"if_version", "if_sha256"} <= set(query)
+                    or {"version", "history", "before"} & set(query)
+                    or not re.fullmatch(r"[1-9][0-9]{0,9}", query["if_version"][0])
+                ):
+                    raise ValueError()
+                return memory.read(
+                    project,
+                    if_version=int(query["if_version"][0]),
+                    if_sha256=query["if_sha256"][0],
+                )
             if "history" in query:
                 if query["history"] != ["1"] or "version" in query:
                     raise ValueError()
@@ -1031,7 +1057,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/project-memory":
                 try:
                     query = parse_qs(
-                        urlsplit(self.path).query, keep_blank_values=True, max_num_fields=4
+                        urlsplit(self.path).query, keep_blank_values=True, max_num_fields=6
                     )
                 except ValueError:
                     raise MemoryError("invalid_memory_query") from None

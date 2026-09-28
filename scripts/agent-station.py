@@ -381,7 +381,7 @@ class Station:
             "Communication presence is not proof of execution or authorization."
         )
 
-    def ensure(self, native, working=False, *, resume=False, after=0, limit=20):
+    def ensure(self, native, working=False, *, resume=False, after=0, limit=20, stream_epoch=None):
         if not isinstance(native, str) or not ID.fullmatch(native):
             raise Error("real_native_session_id_required")
         if (
@@ -391,6 +391,12 @@ class Station:
             or not 1 <= limit <= 100
         ):
             raise Error("invalid_resume_cursor")
+        if stream_epoch is not None and (
+            not resume
+            or not isinstance(stream_epoch, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", stream_epoch)
+        ):
+            raise Error("invalid_resume_stream_epoch")
         with lock(self.state_dir / "station.lock"):
             seat = self.seat()
             binding = seat.get("station_binding") or {}
@@ -539,11 +545,51 @@ class Station:
             coordination = {"status": "unavailable"}
             history = None
             try:
-                history = (
-                    self.client.call("center/inbox", query={"after": after, "limit": limit})
-                    if resume
-                    else self.client.call("center/history")
-                )
+                if resume:
+                    query = {"after": after, "limit": limit}
+                    if stream_epoch is not None:
+                        query["stream_epoch"] = stream_epoch
+                    try:
+                        history = self.client.call(
+                            "center/inbox",
+                            query={
+                                **query,
+                                "project": self.p["project"],
+                                "include_coordination": 1,
+                            },
+                        )
+                    except Error as error:
+                        if (
+                            stream_epoch is not None
+                            or error.status != 400
+                            or error.code
+                            not in (
+                                "unsupported_query_parameter",
+                                "unknown_query_parameter",
+                            )
+                        ):
+                            raise
+                        history = self.client.call("center/inbox", query=query)
+                    if stream_epoch is not None and (
+                        history.get("stream_epoch") != stream_epoch
+                        or history.get("epoch_checked") is not True
+                    ):
+                        raise Error("center_stream_epoch_unconfirmed")
+                    if "filter_mode" not in history:
+                        # Older Control may ignore project parameters. Keep its
+                        # global scan cursor, including on empty relevant pages.
+                        history = {
+                            **history,
+                            "filter_mode": "legacy_scan",
+                            "stream_epoch": None,
+                            "epoch_checked": False,
+                            "filter": {"project": self.p["project"], "include_coordination": True},
+                            "has_more": history.get(
+                                "has_more", len(history.get("messages", [])) >= limit
+                            ),
+                        }
+                else:
+                    history = self.client.call("center/history")
                 messages = history.get("messages", [])
                 coordination = {
                     "status": "observed",
@@ -557,9 +603,10 @@ class Station:
                     "latest_seq": max((item["seq"] for item in messages), default=0),
                     "older_messages_available": bool(history.get("has_more")),
                 }
-            except Error:
+            except Error as error:
                 # Chat availability must not turn an established connection into a failure.
-                pass
+                history = None
+                coordination = {"status": "unavailable", "code": error.code}
             result = {
                 "status": "connected",
                 "project": self.p["project"],
@@ -592,7 +639,9 @@ class Station:
                             for item in history.get("messages", [])
                             if item.get("project") in (self.p["project"], "coordination")
                         ],
-                        "scanned_count": len(history.get("messages", [])),
+                        "scanned_count": history.get(
+                            "scanned_count", len(history.get("messages", []))
+                        ),
                         "limit": limit,
                         "after": after,
                         "order": "ascending",
@@ -640,18 +689,39 @@ class Station:
         atomic(self.state_file, state)
 
     def finish(self, native):
+        if not isinstance(native, str) or not ID.fullmatch(native):
+            raise Error("real_native_session_id_required")
         with lock(self.state_dir / "station.lock"):
             state = self.state()
+            identity = {
+                "schema_version": 1,
+                "operation": "finish",
+                "project": self.p["project"],
+                "host": self.p["host"],
+                "actor_id": self.p["actor_id"],
+                "seat_id": self.p["seat_id"],
+                "native_session_id": native,
+            }
             if not state or state.get("native_session_id") != native:
-                return {"status": "no_owned_transport", "lease_released": False}
+                return {
+                    **identity,
+                    "status": "no_owned_transport",
+                    "session_id": None,
+                    "transport_session_id": None,
+                    "lease_released": False,
+                }
             sid = state["session_id"]
             (self.state_dir / (sid + ".active")).unlink(missing_ok=True)
             result = CLIENT.finish_session(self.client, sid, "finish-" + sid)
-            if result["lease_released"]:
-                state["status"] = "closed"
-            state["finish"] = result
+            receipt = {
+                **result,
+                **identity,
+                "transport_session_id": sid,
+                "status": "closed" if result["lease_released"] else "release_unconfirmed",
+            }
+            state.update(status=receipt["status"], finish=receipt)
             atomic(self.state_file, state)
-            return {"status": state["status"], **result}
+            return receipt
 
     def hook(self, payload):
         if not isinstance(payload, dict):
@@ -1021,6 +1091,7 @@ def main():
             )
             p.add_argument("--after", type=int, default=0)
             p.add_argument("--limit", type=int, default=20)
+            p.add_argument("--stream-epoch", help="Validate the prior project-view message stream")
     p = commands.add_parser("watch")
     p.add_argument("--session-id", required=True)
     p = commands.add_parser(
@@ -1108,7 +1179,12 @@ def main():
             output = station.os_doctor()
         elif args.command == "join":
             output = station.ensure(
-                args.native_session_id, True, resume=args.resume, after=args.after, limit=args.limit
+                args.native_session_id,
+                True,
+                resume=args.resume,
+                after=args.after,
+                limit=args.limit,
+                stream_epoch=args.stream_epoch,
             )
         elif args.command == "finish":
             output = station.finish(args.native_session_id)
@@ -1147,7 +1223,7 @@ def main():
         else:
             output = configure(station, remove=args.command == "uninstall")
         print(json.dumps(output, ensure_ascii=False))
-        return 0
+        return 1 if args.command == "finish" and output.get("lease_released") is not True else 0
     except (Error, OSError, ValueError, KeyError) as error:
         code = (
             error.code if isinstance(error, Error) else "invalid_or_unavailable_local_configuration"

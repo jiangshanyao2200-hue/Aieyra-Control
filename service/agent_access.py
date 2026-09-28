@@ -10,6 +10,8 @@ import threading
 import time
 from urllib.parse import urlencode
 
+import center_messages
+
 ID = re.compile(r"^[A-Za-z0-9_.:-]{1,100}$")
 SLOT = re.compile(r"^[A-Za-z0-9_-]{1,70}$")
 READS = frozenset(
@@ -1020,6 +1022,19 @@ class AgentAccess:
     def center(self, peer, route, body=None, query=None):
         if body is not None:
             ident(body.get("request_id"))
+        if (
+            route in ("inbox", "history")
+            and body is None
+            and query
+            and any(key in query for key in ("project", "include_coordination", "stream_epoch"))
+        ):
+            try:
+                value = center_messages.parse(route, query)
+                if getattr(self.app.hub, "is_local", False):
+                    return center_messages.local_page(self.app.hub.client, peer, route, value)
+                return center_messages.legacy_page(self.remote, peer, route, value)
+            except center_messages.PageError as error:
+                raise AgentError(error.code, error.status) from None
         if route == "history" and body is None:
             query = query or {}
             if set(query) - {"before", "limit"}:

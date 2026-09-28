@@ -4,7 +4,7 @@ On September 28, 2026, the public source history and six release tags were rewri
 
 The source export uses an explicit file allowlist, rejects private output directories and common credential and workstation metadata, and permits binary assets only at their reviewed hashes. New or changed images require a separate content and metadata review before their hashes are approved. Automated scanning supplements human review; it does not prove that every possible private value has been identified.
 
-Run `python scripts/check-public-history.py .` with complete local history before publishing. CI fetches the complete history and runs this check, so deleting a sensitive artifact from the latest tree alone cannot satisfy the gate. Public source checks and source archive verification must pass before a new release is published.
+Use `python scripts/check-public-history.py .` to audit complete local history. CI also runs this check; deleting a sensitive artifact from the latest tree alone does not remove older copies. Historical auditing runs alongside development and does not create an additional release approval process. Fix confirmed privacy defects in the single current source and verify the exported files and package being synchronized.
 
 Original signed baselines were retained unchanged. The sanitized source has these differences from the original runtime baselines:
 

@@ -300,7 +300,7 @@ def openapi(origin="http://127.0.0.1:17910"):
     operation(
         prefix + "memory",
         "get",
-        "Read own project handoff; optional version, history=1 and before cursor",
+        "Read own project handoff; paired if_version/if_sha256 omit unchanged latest sections",
     )
     operation(
         prefix + "memory",
@@ -314,6 +314,25 @@ def openapi(origin="http://127.0.0.1:17910"):
         "List configured local projects or read project handoff/revision history",
         owner=True,
     )
+    for route in (prefix + "memory", "/api/project-memory"):
+        paths[route]["get"]["parameters"] = [
+            {"name": name, "in": "query", "required": False, "schema": shape}
+            for name, shape in (
+                ("project", identifier),
+                ("version", {"type": "integer", "minimum": 1, "maximum": 2147483647}),
+                ("history", {"type": "integer", "enum": [1]}),
+                ("before", {"type": "integer", "minimum": 1, "maximum": 2147483647}),
+                ("if_version", {"type": "integer", "minimum": 1, "maximum": 2147483647}),
+                ("if_sha256", {"type": "string", "pattern": "^[a-f0-9]{64}$"}),
+            )
+        ]
+        paths[route]["get"]["description"] = (
+            "if_version and if_sha256 must be paired and cannot accompany version/history/before. "
+            "Matching latest version AND content hash returns HTTP 200, not_modified=true, "
+            "conditional_read=version_and_sha256 and metadata without sections or missing_sections. "
+            "Use only already-read matching content. Any difference returns the full latest document "
+            "with not_modified=false. Reads do not save memory, renew leases or acknowledge tasks."
+        )
     operation(
         "/api/project-memory",
         "post",
@@ -357,6 +376,52 @@ def openapi(origin="http://127.0.0.1:17910"):
             ("limit", {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}),
         )
     ]
+    inbox = paths[prefix + "center/inbox"]["get"]
+    inbox["parameters"] = [
+        {"name": name, "in": "query", "required": False, "schema": shape}
+        for name, shape in (
+            ("after", {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}),
+            ("limit", {"type": "integer", "minimum": 1, "maximum": 100, "default": 50}),
+        )
+    ]
+    for page in (inbox, history):
+        page["parameters"].extend(
+            [
+                {
+                    "name": "project",
+                    "in": "query",
+                    "required": False,
+                    "schema": identifier,
+                    "description": "Registered project view; does not change authorization.",
+                },
+                {
+                    "name": "include_coordination",
+                    "in": "query",
+                    "required": False,
+                    "schema": {"type": "integer", "enum": [0, 1], "default": 0},
+                    "description": "Requires project; include coordination messages.",
+                },
+                {
+                    "name": "stream_epoch",
+                    "in": "query",
+                    "required": False,
+                    "schema": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                    "description": "Requires project. Echo the prior stream_epoch with its cursor.",
+                },
+            ]
+        )
+        page["x-query-contract"] += (
+            " With project, local center uses filter_mode=server and one SQLite snapshot. "
+            "Legacy center uses filter_mode=legacy_scan and one global page; an empty filtered "
+            "page may still have more. Keep the same filter while following next_cursor/after "
+            "or next_before/before. Reads never ACK. Inbox exhaustion advances to snapshot_cursor; "
+            "legacy snapshot_cursor is null and full pages may conservatively report has_more."
+            " Local project views return a persistent database/view stream_epoch and epoch_checked. "
+            "Expected epoch mismatch is 409 center_stream_epoch_mismatch; a checked inbox cursor "
+            "beyond the head is 409 center_cursor_ahead_of_stream. Never reset automatically. "
+            "Legacy epoch is null; an expected epoch is 501 center_stream_epoch_unavailable. "
+            "An intact database copy retains the same epoch; this is not a content digest."
+        )
     for route in sorted(WRITES):
         operation(
             prefix + "center/" + route,

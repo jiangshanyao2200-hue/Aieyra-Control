@@ -93,14 +93,14 @@ test('malformed/oversize/control-before-hello have bounded explicit errors', (t)
   assert.deepEqual(h.failures, ['owner_handshake_invalid']);
 });
 test('owner named channel is constrained to local random product pipe, never remote/TCP/path', () => {
-  assert.equal(validOwnerPipeName(PIPE_PREFIX + '0123456789abcdef0123456789abcdef'), true);
+  assert.equal(validOwnerPipeName(PIPE_PREFIX + '123456781234123412341234567890ab'), true);
   for (const value of [
     'tcp://127.0.0.1:1234',
     String.raw`\\remote\pipe\aieyra-control-owner-1234`,
     PIPE_PREFIX + '../other',
     PIPE_PREFIX + 'short',
     'C:/owner',
-    PIPE_PREFIX + '01234567-89ab-cdef-0123-456789abcdef',
+    PIPE_PREFIX + '12345678-1234-1234-1234-1234567890ab',
     PIPE_PREFIX + 'ABCDEF0123456789ABCDEF0123456789',
   ]) {
     assert.equal(validOwnerPipeName(value), false);

@@ -21,6 +21,14 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def file_digest(path):
+    value = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(256 * 1024), b""):
+            value.update(chunk)
+    return value.hexdigest()
+
+
 def build(output, key_path, python_dir, electron_dir, sequence, version=None):
     package_version = json.loads((ROOT / "desktop/package.json").read_text(encoding="utf-8"))[
         "version"
@@ -55,10 +63,10 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
         "sequence": sequence,
         "created_at": int(time.time()),
         "minimum_updater": 1,
-        "notes": "新增Agent显式创建并加入工位、离线领导通知与有界历史查询；完善通知分页和交接后复核，区分CLI输入错误；支持私密反馈/2产品隔离，保留身份校验、未知投递不重放、签名更新及回退。",
+        "notes": "支持项目消息流过滤、可靠finish收据、条件记忆读取与持久消息流epoch；修正公开文档路径并加入完整源码历史隐私检查，保留本地成长、未知任务不重放及签名升级精确回退。",
         "source": {
             "path": "/artifacts/" + source.name,
-            "sha256": digest(source.read_bytes()),
+            "sha256": file_digest(source),
             "size": source.stat().st_size,
         },
         "files": {
@@ -116,7 +124,7 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
                     )
     manifest["portable"] = {
         "path": "/artifacts/" + portable.name,
-        "sha256": digest(portable.read_bytes()),
+        "sha256": file_digest(portable),
         "size": portable.stat().st_size,
     }
     manifest["platforms"] = {"windows-x64": manifest["portable"]}

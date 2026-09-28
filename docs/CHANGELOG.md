@@ -1,5 +1,15 @@
 # Changes
 
+## 0.6.6
+
+- Project-filtered message pages expose a persistent database/view stream epoch. An optional expected epoch fences stale or differently filtered cursors; checked forward cursors beyond the stream head fail explicitly. Station resume can pass the epoch without saving a cursor, acknowledging messages or automatically falling back to unchecked reads. Legacy centers disclose unavailable epoch validation.
+
+- Latest project memory supports paired version/hash conditional reads that omit unchanged sections. Finish retains the initial full memory and pending-delivery checks, then uses a validated conditional readback with a bounded older-service fallback. New revisions with identical content remain detectable; memory CAS and project authorization are unchanged.
+
+- Station finish returns the same versioned receipt stored in local state, with explicit native and transport identities. Explicit CLI exit status now reflects confirmed lease release; host hooks remain nonblocking. Memory saving, task completion and communication closure remain separate.
+
+- Project-filtered inbox/history reads use local database pagination with explicit snapshot and exclusive cursors. Explicit station resume requests its project plus coordination. Legacy centers retain one-page scan cursors and disclose `legacy_scan`, including empty filtered pages. Reads never acknowledge messages or persist chat/cursors.
+
 ## 0.6.5
 
 - Agent history reads now honor a 1–100 message limit (default 20) and return an exclusive `next_before` cursor. Invalid query/body JSON and unreadable body files have distinct CLI errors, so input mistakes are no longer reported as credential failures. Reads do not acknowledge messages.

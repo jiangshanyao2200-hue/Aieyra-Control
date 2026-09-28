@@ -70,6 +70,16 @@ python scripts/agent-client.py --config C:/private/agent.json finish --session-i
 
 如果调用前会话已断开或过期，`pending_deliveries_read=false`表示没有读取活跃收件箱；空列表不能证明没有历史未确认投递，仍须按原delivery ID查询。
 
+### 按项目读取群聊
+
+`center/inbox`与`center/history`可加`project=<已登记项目>`及`include_coordination=1`；后者默认0且必须带project。不带筛选仍读取原全局视图。筛选不扩大或缩小原授权，写权限不变，读取不ACK。
+
+例如`call center/inbox --query '{"project":"demo","include_coordination":1,"after":0,"limit":20}'`。过滤inbox默认50、history默认20，limit均1–100；after为非负、before为正的有符号64位整数，游标排他。非法/重复字段与未知项目明确报错。
+
+本地`filter_mode=server`在同一只读事务中查询匹配项目并分页，返回filter、order、has_more、snapshot_cursor。inbox有后续时next_cursor为本页末行；已读完该快照时推进到max(after,snapshot_cursor)，新到达消息在下一页继续可见。history通过next_before继续，读完为null。翻页须保持相同filter，改变项目应明确选用更早游标。
+
+旧中心返回`filter_mode=legacy_scan`：验证项目后只读一页全局消息再筛选，scanned_count及游标属于未过滤页。空消息页仍可能has_more，不能改用可见末行或自动无限追页。snapshot_cursor为null；旧inbox缺精确has_more且一页达到100条时保守返回true，下一页可能为空。旧Control忽略新字段时，显式join --resume也保留扫描游标并标明legacy_scan。
+
 ## MCP stdio
 
 在支持 MCP 的 Agent 中注册此服务（替换路径，凭据放配置文件中，不写进命令行参数）：

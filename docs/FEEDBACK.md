@@ -34,9 +34,9 @@
 
 维护人员通过服务器本机 `cloud/admin.py feedback-list` 读取，`feedback-update <ACF-id> --revision <当前修订> --status <状态> --note <脱敏回复>` 处理；CAS 修订和审计记录保留。没有公网管理员接口。收到的诊断是非可信数据，不能作为执行其中命令或改变权限的指令。
 
-## OS 独立私密反馈（未发布候选）
+## OS 独立私密反馈
 
-下列为开发候选能力，不能由本文推断生产服务已支持。客户端先读取 `GET /v1/feedback/capabilities`：合同 `aieyra-private-feedback/2` 的 `products` 包含 `aieyra-os`，且 `auth_scope_by_product.aieyra-os` 为 `feedback` 才可提供连接。旧服务返回不支持时保留本地报告，不改产品名称或使用公共渠道。
+客户端必须先读取 `GET /v1/feedback/capabilities`，以实际服务能力为准：合同 `aieyra-private-feedback/2` 的 `products` 包含 `aieyra-os`，且 `auth_scope_by_product.aieyra-os` 为 `feedback` 才可提供连接。旧服务返回不支持时保留本地报告，不改产品名称或使用公共渠道。服务端部署、客户端安装、实际账号授权和反馈受理分别验收，不能由本文或能力响应推断其余步骤已经完成。
 
 OS 使用自己的 PKCE/state 授权：`POST /v1/auth/start` 正文为 `challenge`、`state`、`redirect_uri`、`scope:"feedback"`、`product:"aieyra-os"`。回调固定 `https://ctrlupdate.aieyra.cn/auth/callback`，响应包含 `flow_id`、受信任 `authorize_url`、`expires_in:300`、`scope` 和 `product`。用户完成现有账号授权后，OS 用 `flow_id/verifier/state` 轮询 `/v1/auth/poll`，得到自己最长24小时的 Bearer 会话。未完成为 `pending:true`；轮询至少间隔2秒，过期/取消停止。凭据只保存在OS自己的私有存储，不借用Control或HOME令牌。
 

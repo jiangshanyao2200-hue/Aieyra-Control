@@ -25,6 +25,14 @@ class LocalClient:
             db.execute(
                 "CREATE INDEX IF NOT EXISTS control_message_created ON messages(created,seq)"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS control_message_stream("
+                "id INTEGER PRIMARY KEY CHECK(id=1), epoch TEXT NOT NULL)"
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO control_message_stream VALUES(1,?)",
+                (secrets.token_hex(32),),
+            )
         for project in [
             {"id": "coordination", "name": "本地群聊", "root": "", "source": ""},
             *projects,

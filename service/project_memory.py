@@ -97,17 +97,47 @@ class ProjectMemory:
             "storage": "local_control",
         }
 
-    def read(self, project, version=None):
-        meta = self.project(project)
+    def read(self, project, version=None, *, if_version=None, if_sha256=None):
+        identifier(project)
         if version is not None and (type(version) is not int or not 1 <= version <= 2147483647):
             raise MemoryError("invalid_memory_version")
+        conditional = if_version is not None or if_sha256 is not None
+        if conditional and (
+            version is not None
+            or type(if_version) is not int
+            or not 1 <= if_version <= 2147483647
+            or not isinstance(if_sha256, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", if_sha256)
+        ):
+            raise MemoryError("invalid_memory_condition")
         with self.store.db() as db:
+            db.execute("BEGIN")
+            meta = db.execute("SELECT * FROM memory_projects WHERE id=?", (project,)).fetchone()
+            if meta is None:
+                raise MemoryError("memory_project_not_configured", 404)
+            meta = dict(meta)
             latest = (
                 db.execute(
                     "SELECT MAX(version) FROM project_memory_revisions WHERE project=?", (project,)
                 ).fetchone()[0]
                 or 0
             )
+            if conditional:
+                metadata = db.execute(
+                    """SELECT project,version,sha256,summary,actor,session_id,created_at
+                    FROM project_memory_revisions WHERE project=? AND version=?""",
+                    (project, latest),
+                ).fetchone()
+                if metadata and latest == if_version and metadata["sha256"] == if_sha256:
+                    return {
+                        "memory": {**dict(metadata), "storage": "local_control"},
+                        "project": meta,
+                        "current_version": latest,
+                        "not_modified": True,
+                        "conditional_read": "version_and_sha256",
+                        "read_order": list(SECTIONS),
+                        "content_is_project_data": True,
+                    }
             row = db.execute(
                 "SELECT * FROM project_memory_revisions WHERE project=? AND version=?",
                 (project, latest if version is None else version),
@@ -136,6 +166,11 @@ class ProjectMemory:
             "missing_sections": [k for k in SECTIONS if not doc["sections"][k].strip()],
             "read_order": list(SECTIONS),
             "content_is_project_data": True,
+            **(
+                {"not_modified": False, "conditional_read": "version_and_sha256"}
+                if conditional
+                else {}
+            ),
         }
 
     def history(self, project, before=None):
