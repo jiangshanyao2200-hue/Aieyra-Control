@@ -24,6 +24,97 @@ BLOCKED = {
 SENSITIVE = re.compile(
     rb"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{24,}"
 )
+BINARY_ASSETS = {
+    "desktop/assets/icon.png": "f63b931ca21255532059af9e26bcc444ed738bf770ab003ed4b0553ab6a80cba",
+    "desktop/assets/icon.ico": "0ca1399c1d88d1caaf8d02cb6c6a6befdfa1490f7289f3c146fc4c551d62f3c3",
+}
+TEXT_SUFFIXES = {
+    "",
+    ".py",
+    ".js",
+    ".json",
+    ".cjs",
+    ".mjs",
+    ".md",
+    ".yml",
+    ".yaml",
+    ".html",
+    ".css",
+    ".ps1",
+    ".vbs",
+    ".cs",
+    ".toml",
+    ".txt",
+    ".svg",
+    ".pem",
+}
+WINDOWS_PATH = re.compile(r"(?<![\w\\])([A-Za-z]):[\\/]+([^\s\"'<>`|]+)")
+HOME_PATH = re.compile(r"/(?:Users|home)/([A-Za-z0-9_.-]+)(?:[/\\]|\b)")
+NATIVE_THREAD = re.compile(
+    r"\b01[0-9a-f]{6}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I
+)
+EXAMPLE_ROOTS = {
+    "path",
+    "private",
+    "projects",
+    "absolute",
+    "windows",
+    "untrusted",
+    "owner",
+    "secret_key",
+}
+EXAMPLE_USERS = {"example", "user", "private", "test", "fixture", "username"}
+
+
+def validate_public_files(files):
+    """Fail closed on known private metadata forms; never print matched values."""
+    for name, raw in files.items():
+        parts = Path(name).parts
+        if set(parts) & BLOCKED or Path(name).is_absolute() or ".." in parts:
+            raise ValueError("private_artifact_path_in_" + name)
+        if Path(name).suffix in {".png", ".ico"}:
+            if hashlib.sha256(raw).hexdigest() != BINARY_ASSETS.get(name):
+                raise ValueError("unreviewed_binary_asset_in_" + name)
+            continue
+        if SENSITIVE.search(raw):
+            raise ValueError("sensitive_content_in_" + name)
+        if Path(name).suffix not in TEXT_SUFFIXES:
+            raise ValueError("unreviewed_file_type_in_" + name)
+        text = raw.decode("utf-8", errors="strict")
+        # Decode common source/JSON escapes without evaluating source code.
+        text = re.sub(
+            r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})",
+            lambda m: chr(int(m.group(1) or m.group(2), 16)),
+            text,
+        )
+        text = text.replace(r"\/", "/")
+        if SENSITIVE.search(text.encode("utf-8", errors="surrogatepass")):
+            raise ValueError("sensitive_content_in_" + name)
+        if any(
+            match.group(0).lower() != "01234567-89ab-cdef-0123-456789abcdef"
+            for match in NATIVE_THREAD.finditer(text)
+        ):
+            raise ValueError("native_session_literal_in_" + name)
+        for match in WINDOWS_PATH.finditer(text):
+            tail = match.group(2).replace("\\", "/")
+            pieces = [p for p in tail.split("/") if p]
+            root = pieces[0].casefold() if pieces else ""
+            if root == "users":
+                if len(pieces) == 1 or pieces[1].casefold() in EXAMPLE_USERS:
+                    continue
+            if root not in EXAMPLE_ROOTS:
+                raise ValueError("local_path_literal_in_" + name)
+        for match in HOME_PATH.finditer(text):
+            if match.group(1).casefold() not in EXAMPLE_USERS:
+                raise ValueError("home_path_literal_in_" + name)
+        normalized = text.replace(r"\.", ".").replace("[.]", ".")
+        for candidate in re.findall(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", normalized):
+            try:
+                address = ipaddress.ip_address(candidate)
+            except ValueError:
+                continue
+            if address.is_global:
+                raise ValueError("public_ip_literal_in_" + name)
 
 
 def sources(include_development=False):
@@ -67,6 +158,7 @@ def sources(include_development=False):
             "package-smoke.py",
             "seal-build.py",
             "check-quality.py",
+            "check-public-history.py",
         ]
     for name in names:
         files["scripts/" + name] = (ROOT / "scripts" / name).read_bytes()
@@ -89,6 +181,7 @@ def sources(include_development=False):
         files["docs/" + name] = (ROOT / "docs" / name).read_bytes()
     if include_development:
         files["SECURITY.md"] = security.read_bytes()
+        files["docs/SOURCE_PRIVACY.md"] = (ROOT / "docs/SOURCE_PRIVACY.md").read_bytes()
     if include_development and (ROOT / "config/release-baseline.json").exists():
         files["config/release-baseline.json"] = (ROOT / "config/release-baseline.json").read_bytes()
     if include_development and (ROOT / "config/artifact-seal-public.pem").exists():
@@ -140,17 +233,7 @@ def sources(include_development=False):
         for name in ["supervisor.test.cjs", "service-fixture.py"]:
             files["desktop/test/" + name] = (ROOT / "desktop/test" / name).read_bytes()
         files[".gitignore"] += b"tests/test-output/\ndesktop/test-output/\n.ruff_cache/\n"
-    for name, raw in files.items():
-        if SENSITIVE.search(raw):
-            raise ValueError("sensitive_content_in_" + name)
-        if name.endswith((".py", ".js", ".json", ".cjs", ".md", ".yml", ".html", ".css", ".ps1")):
-            for candidate in re.findall(rb"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", raw):
-                try:
-                    address = ipaddress.ip_address(candidate.decode())
-                except ValueError:
-                    continue
-                if address.is_global:
-                    raise ValueError("public_ip_literal_in_" + name)
+    validate_public_files(files)
     return files
 
 

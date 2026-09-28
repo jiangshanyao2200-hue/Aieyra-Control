@@ -14,6 +14,55 @@ spec.loader.exec_module(exporter)
 
 
 class SourceExportTests(unittest.TestCase):
+    def test_private_metadata_and_encoded_addresses_are_rejected(self):
+        octets = [8, 8, 4, 4]
+        plain = ".".join(map(str, octets))
+        cases = [
+            plain,
+            plain.replace(".", r"\."),
+            plain.replace(".", "[.]"),
+            plain.replace(".", r"\u002e"),
+            "C:/Users/" + "person-" + "fixture/report.txt",
+            "D:/" + "private-installation" + "/source/main.py",
+            "/home/" + "person-" + "fixture/report.txt",
+            "01" + "abcdef-1234-5678-90ab-cdef01234567",
+            "ghp_" + "synthetic" * 4,
+        ]
+        for value in cases:
+            with self.subTest(kind=cases.index(value)):
+                with self.assertRaises(ValueError) as caught:
+                    exporter.validate_public_files({"docs/example.md": value.encode()})
+                self.assertNotIn(value, str(caught.exception))
+
+    def test_documentation_placeholders_and_regex_source_are_allowed(self):
+        for value in [
+            "C:/Path/To/product.py",
+            "E:/Projects/Demo",
+            "C:/private/agent.json",
+            "/Users/example/Projects/product",
+            r"C:\Users\private\code\test.py",
+            r"\d\d:\d\d",
+            r"/(?:Users|home)/([^\s]+)",
+            "127.0.0.1",
+            "192.0.2.1",
+        ]:
+            exporter.validate_public_files({"docs/example.md": value.encode()})
+
+    def test_test_artifacts_and_unreviewed_images_cannot_be_exported(self):
+        for name in [
+            "desktop/test-output/screen.png",
+            "desktop/test-output/receipt.json",
+            "desktop/assets/real-workstation.png",
+            "data/account.json",
+            "desktop/assets/unreviewed.jpg",
+            "desktop/assets/icon.png",
+        ]:
+            with self.subTest(path=name), self.assertRaises(ValueError):
+                exporter.validate_public_files({name: b"fixture"})
+        exporter.validate_public_files(
+            {"desktop/assets/icon.png": (ROOT / "desktop/assets/icon.png").read_bytes()}
+        )
+
     def test_token_scanner_distinguishes_token_prefix_from_task_names(self):
         self.assertIsNone(
             exporter.SENSITIVE.search(b"task-leases-and-past-runtime-remain-distinct")
