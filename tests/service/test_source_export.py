@@ -27,6 +27,12 @@ class SourceExportTests(unittest.TestCase):
             "/home/" + "person-" + "fixture/report.txt",
             "01" + "abcdef-1234-5678-90ab-cdef01234567",
             "ghp_" + "synthetic" * 4,
+            "agent-" + "abc123" * 2 + "abcd",
+            "ext-seat-" + "abc123" * 4,
+            "station-codex-" + "abcd" * 8,
+            "/root/" + "private-" + "deployment/config.json",
+            "AKIA" + "ABCD" * 4,
+            "xoxb-" + "synthetic" * 4,
         ]
         for value in cases:
             with self.subTest(kind=cases.index(value)):

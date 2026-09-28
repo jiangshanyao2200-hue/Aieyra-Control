@@ -22,7 +22,7 @@ BLOCKED = {
     "history",
 }
 SENSITIVE = re.compile(
-    rb"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{24,}"
+    rb"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{24,}|\bAKIA[A-Z0-9]{16}\b|\bxox[baprs]-[A-Za-z0-9-]{15,}"
 )
 BINARY_ASSETS = {
     "desktop/assets/icon.png": "f63b931ca21255532059af9e26bcc444ed738bf770ab003ed4b0553ab6a80cba",
@@ -50,6 +50,11 @@ TEXT_SUFFIXES = {
 }
 WINDOWS_PATH = re.compile(r"(?<![\w\\])([A-Za-z]):[\\/]+([^\s\"'<>`|]+)")
 HOME_PATH = re.compile(r"/(?:Users|home)/([A-Za-z0-9_.-]+)(?:[/\\]|\b)")
+OPERATIONS_PATH = re.compile(r"/(?:root|srv|opt)/([A-Za-z0-9_.-]+)(?:[/\\]|\b)")
+STATION_ID = re.compile(
+    r"\b(?:agent-[a-f0-9]{16}|ext-seat-[a-f0-9]{24}|station-(?:generic|codex)-[a-f0-9]{32})\b",
+    re.I,
+)
 NATIVE_THREAD = re.compile(
     r"\b01[0-9a-f]{6}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I
 )
@@ -95,6 +100,8 @@ def validate_public_files(files):
             for match in NATIVE_THREAD.finditer(text)
         ):
             raise ValueError("native_session_literal_in_" + name)
+        if STATION_ID.search(text):
+            raise ValueError("station_identity_literal_in_" + name)
         for match in WINDOWS_PATH.finditer(text):
             tail = match.group(2).replace("\\", "/")
             pieces = [p for p in tail.split("/") if p]
@@ -107,6 +114,9 @@ def validate_public_files(files):
         for match in HOME_PATH.finditer(text):
             if match.group(1).casefold() not in EXAMPLE_USERS:
                 raise ValueError("home_path_literal_in_" + name)
+        for match in OPERATIONS_PATH.finditer(text):
+            if match.group(1).casefold() not in {"example", "fixture", "product", "aieyra-control"}:
+                raise ValueError("operations_path_literal_in_" + name)
         normalized = text.replace(r"\.", ".").replace("[.]", ".")
         for candidate in re.findall(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", normalized):
             try:
