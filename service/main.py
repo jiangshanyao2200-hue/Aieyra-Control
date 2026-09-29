@@ -47,13 +47,19 @@ from agent_protocol import openapi as agent_openapi
 from station_notifications import StationNotifications
 from project_memory import ProjectMemory, MemoryError
 from cloud_link import CloudLink, CloudError
+from device_link import DeviceLink, LinkError
 from cloud_session import SessionVault
 from feedback import Feedback, FeedbackError
 from growth import Growth
 from local_hub import create_local_hub
-from paths import shared_directory, configuration_file, initialize as initialize_paths
+from paths import (
+    shared_directory,
+    configuration_file,
+    external_path,
+    initialize as initialize_paths,
+)
 
-VERSION = "0.6.6"
+VERSION = "0.7.0"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -104,6 +110,9 @@ def validate_resource(item):
 class Application:
     def __init__(self, config, data_dir, hub=None, queue_runner=None):
         self.config = config
+        self.device_link = DeviceLink(
+            data_dir.parent if data_dir.name == "shared" else data_dir, ROOT
+        )
         self.cloud = CloudLink(
             vault=SessionVault(
                 (data_dir.parent if data_dir.name == "shared" else data_dir) / "config"
@@ -808,6 +817,11 @@ class Server(ThreadingHTTPServer):
         self.web_root = (web_root or ROOT / "web").resolve()
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = "http://127.0.0.1:" + str(self.server_address[1])
+        self.app.device_link.start(self.origin)
+
+    def server_close(self):
+        self.app.device_link.close()
+        super().server_close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1054,6 +1068,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, self.server.app.agent_access.listing())
             if path == "/api/cloud":
                 return self.send(200, self.server.app.cloud.status())
+            if path == "/api/link":
+                return self.send(200, self.server.app.device_link.status())
+            if path == "/api/link/view":
+                query = parse_qs(
+                    urlsplit(self.path).query, keep_blank_values=True, max_num_fields=4
+                )
+                return self.send(200, self.server.app.device_link.view(query))
             if path == "/api/project-memory":
                 try:
                     query = parse_qs(
@@ -1186,7 +1207,7 @@ class Handler(BaseHTTPRequestHandler):
                     else ""
                 ),
             )
-        except (CloudError, FeedbackError) as error:
+        except (CloudError, FeedbackError, LinkError) as error:
             self.send(error.status, {"error": error.code, "code": error.code})
         except MemoryError as error:
             self.send(
@@ -1292,6 +1313,8 @@ class Handler(BaseHTTPRequestHandler):
                     else self.server.app.agent_access.mutate(peer, action, value)
                 )
                 return self.send(200, result)
+            if path.startswith("/api/link/"):
+                return self.send(200, self.server.app.device_link.action(path[10:], value))
             if path.startswith("/api/cloud/"):
                 methods = {
                     "login": self.server.app.cloud.start,
@@ -1310,6 +1333,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, self.server.app.agent_access.revoke(value))
             if self.path == "/api/agent-access/handoff":
                 return self.send(200, self.server.app.agent_access.owner_handoff(value))
+            if self.path == "/api/agent-access/exchange":
+                return self.send(200, self.server.app.agent_access.owner_exchange(value))
             if self.path == "/api/chat":
                 return self.send(200, {"delivery": self.server.app.submit(value)})
             if self.path == "/api/requirement-dispatch":
@@ -1336,7 +1361,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise Problem("invalid_management_request", "管理请求需包含动作和对象参数。")
                 return self.send(200, {"result": self.server.app.management(action, payload)})
             raise Problem("not_found", "接口不存在。", 404)
-        except (CloudError, FeedbackError) as error:
+        except (CloudError, FeedbackError, LinkError) as error:
             self.send(error.status, {"error": error.code, "code": error.code})
         except MemoryError as error:
             self.send(
@@ -1407,6 +1432,8 @@ def main():
     parser.add_argument("--config", type=Path, default=configuration_file())
     parser.add_argument("--data-dir", type=Path, default=shared_directory())
     args = parser.parse_args()
+    args.data_dir = external_path(args.data_dir)
+    args.config = external_path(args.config)
     if args.config == configuration_file():
         initialize_paths()
     try:

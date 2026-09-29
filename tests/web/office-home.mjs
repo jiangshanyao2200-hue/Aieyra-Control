@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { fixture } from './fixture.mjs';
@@ -9,7 +10,7 @@ import { fixture } from './fixture.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out =
   process.env.CONTROL_TEST_OUTPUT ||
-  path.join(root, 'tests/test-output', `office-home-${Date.now()}-${process.pid}`);
+  path.join(os.tmpdir(), 'aieyra-control-test-output', `office-home-${Date.now()}-${process.pid}`);
 await mkdir(out, { recursive: true });
 let historyItems = null,
   historyDelay = 0,
@@ -23,9 +24,15 @@ let snapshot,
   writes = [],
   reads = [],
   projection;
+let linkState, linkCalls, remoteDelay;
+const connectionId = 'a'.repeat(32),
+  serviceId = 'b'.repeat(32) + ':control';
 const longText =
   '这是完整的工作动态，包含具体实施过程、验证证据与下一步。\n'.repeat(90) + '全文结束标记';
 function reset() {
+  linkState = { installed: true, connections: [] };
+  linkCalls = [];
+  remoteDelay = 0;
   accountEnabled = false;
   accountPending = false;
   accountCalls = [];
@@ -106,6 +113,39 @@ const server = createServer(async (req, res) => {
         res.writeHead(code, { 'content-type': 'application/json' });
         res.end(JSON.stringify(v));
       };
+    if (req.method === 'POST' && u.pathname.startsWith('/api/link/')) {
+      let raw = '';
+      for await (const part of req) raw += part;
+      if (req.headers['x-control-csrf'] !== 'fixture-csrf') return send(403, {});
+      const value = JSON.parse(raw);
+      linkCalls.push({ path: u.pathname, value });
+      if (u.pathname.endsWith('/pair')) {
+        const row = linkState.connections.find((r) => r.id === value.connection);
+        if (row) row.paired = true;
+        else
+          linkState.connections.push({
+            id: connectionId,
+            name: value.name,
+            paired: true,
+            services: [],
+            gateways: [],
+          });
+        return send(200, { connection: row?.id || connectionId, paired: true });
+      }
+      const row = linkState.connections.find((r) => r.id === value.connection);
+      if (!row) return send(404, {});
+      if (u.pathname.endsWith('/attach'))
+        Object.assign(row, { attached: true, share_view: value.share_view });
+      if (u.pathname.endsWith('/connect'))
+        row.gateways = [
+          { service_id: value.service, url: 'http://127.0.0.1:17921', running: true },
+        ];
+      if (u.pathname.endsWith('/disconnect')) {
+        if (value.service) row.gateways = [];
+        else row.attached = false;
+      }
+      return send(200, {});
+    }
     if (req.method === 'POST' && u.pathname.startsWith('/api/cloud/')) {
       accountCalls.push(u.pathname);
       let raw = '';
@@ -136,6 +176,19 @@ const server = createServer(async (req, res) => {
     if (u.pathname === '/api/session') return send(200, { csrf: 'fixture-csrf' });
     if (u.pathname.startsWith('/api/')) reads.push(u.pathname);
     if (fail.has(u.pathname)) return send(503, { error: 'synthetic_read_failure' });
+    if (u.pathname === '/api/link') return send(200, linkState);
+    if (u.pathname === '/api/link/view') {
+      if (remoteDelay) await new Promise((r) => setTimeout(r, remoteDelay));
+      const remote = structuredClone(snapshot),
+        seats = structuredClone(registry);
+      remote.agents.forEach((a) => {
+        a.name = '远端工位 ' + a.id;
+      });
+      seats.seats.forEach((s) => {
+        s.name = '远端工位 ' + s.actor_id;
+      });
+      return send(200, u.searchParams.get('resource') === 'registry' ? seats : remote);
+    }
     if (u.pathname === '/api/snapshot') return send(200, snapshot);
     if (u.pathname === '/api/chat-history') {
       if (historyDelay) await new Promise((r) => setTimeout(r, historyDelay));
@@ -299,10 +352,10 @@ function manyHistory(n = 245) {
   snapshot.messages = historyItems.slice(-100).reverse();
 }
 try {
-  await test('home-unframed-stations-and-three-sidebar-entrypoints', async () => {
+  await test('home-unframed-stations-and-four-sidebar-entrypoints', async () => {
     await open();
     assert.equal(await page.locator('.home-seat').count(), 8);
-    assert.equal(await page.locator('.home-orb').count(), 3);
+    assert.equal(await page.locator('.home-orb').count(), 4);
     assert.equal(
       await page
         .locator(
@@ -592,7 +645,7 @@ try {
             return { x: r.x, y: r.y, width: r.width, height: r.height };
           }),
         );
-      assert.equal(orbs.length, 3);
+      assert.equal(orbs.length, 4);
       assert.ok(rail.x === 0 && rail.y === 0 && rail.height === size.height);
       assert.ok(orbs[0].x === orbs[1].x && orbs[1].y >= orbs[0].y + orbs[0].height);
       assert.ok(
@@ -704,6 +757,83 @@ try {
     assert.equal(await page.locator('#open-account').getAttribute('aria-label'), '登录');
     assert.deepEqual(accountCalls, ['/api/cloud/login', '/api/cloud/poll', '/api/cloud/logout']);
     await page.screenshot({ path: path.join(out, 'account-dialog.png') });
+  });
+  await test('link-draft-survives-refresh-and-pair-clears-device-code', async () => {
+    await open();
+    await page.locator('#open-link').click();
+    await page.locator('#link-pair-form input').fill('本机设备');
+    await page.locator('#link-pair-form textarea').fill('private-one-time-device-code');
+    await refresh();
+    assert.equal(
+      await page.locator('#link-pair-form textarea').inputValue(),
+      'private-one-time-device-code',
+    );
+    await page.locator('#link-pair-form button').click();
+    await page.waitForFunction(() => document.querySelectorAll('.link-panel article').length === 1);
+    assert.equal(await page.locator('#link-pair-form textarea').inputValue(), '');
+    assert.deepEqual(
+      linkCalls.map((c) => c.path),
+      ['/api/link/pair', '/api/link/refresh'],
+    );
+    assert.deepEqual(accountCalls, []);
+    assert.equal(
+      await page.evaluate(() => JSON.stringify(localStorage).includes('private-one-time')),
+      false,
+    );
+    await page.screenshot({ path: path.join(out, 'link-paired.png') });
+  });
+  await test('link-retry-retains-original-name-and-sharing-needs-explicit-action', async () => {
+    linkState.connections = [
+      { id: connectionId, name: '原设备', paired: false, services: [], gateways: [] },
+    ];
+    await open();
+    await page.locator('#open-link').click();
+    await page.locator('[data-link=retry]').waitFor();
+    await page.locator('#link-pair-form input').fill('不同名称');
+    await page.locator('#link-pair-form textarea').fill('retry-private-code');
+    await page.locator('[data-link=retry]').click();
+    await page.locator('[data-link=attach]').waitFor();
+    assert.equal(linkCalls[0].value.name, '原设备');
+    assert.equal(linkCalls[0].value.connection, connectionId);
+    await page.locator('[data-share]').check();
+    await refresh();
+    assert.equal(await page.locator('[data-share]').isChecked(), true);
+    assert.equal(linkCalls.filter((c) => c.path.endsWith('/attach')).length, 0);
+    await page.locator('[data-link=attach]').click();
+    await page.locator('[data-link=detach]').waitFor();
+    assert.deepEqual(linkCalls.at(-1), {
+      path: '/api/link/attach',
+      value: { connection: connectionId, share_view: true },
+    });
+  });
+  await test('link-switches-office-and-discards-late-remote-result', async () => {
+    linkState.connections = [
+      {
+        id: connectionId,
+        name: '本机',
+        paired: true,
+        services: [{ id: serviceId, name: '私人办公室', state: 'online' }],
+        gateways: [],
+      },
+    ];
+    await open();
+    await page.locator('#open-link').click();
+    await page.locator('[data-link=connect]').click();
+    await page.waitForFunction(() =>
+      document.querySelector('.seat-name')?.textContent.includes('远端'),
+    );
+    assert.equal(await page.locator('#office-location').innerText(), '远端 · 私人办公室');
+    remoteDelay = 700;
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.locator('#open-link').click();
+    await page.locator('[data-link=local]').click();
+    await page.waitForFunction(() =>
+      document.querySelector('.seat-name')?.textContent.includes('Control'),
+    );
+    await page.waitForTimeout(850);
+    assert.equal(await page.locator('#office-location').innerText(), '本地办公室');
+    assert.ok((await page.locator('.seat-name').first().innerText()).includes('Control'));
+    assert.deepEqual(accountCalls, []);
   });
   await test('all-requests-read-only-no-script-errors', async () => {
     assert.deepEqual(errors, []);

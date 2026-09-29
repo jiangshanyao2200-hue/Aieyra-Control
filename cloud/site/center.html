@@ -6,11 +6,20 @@
       content="width=device-width,initial-scale=1" /><meta
       name="theme-color"
       content="#10191d" /><title>中心 · Aieyra Control</title
-    ><meta name="description" content="Matrix 共同发现问题、分享修复，让代码持续生长。" /><link
+    ><meta name="description" content="公开讨论、功能反馈、项目分享与新版发布。" /><link
       rel="stylesheet"
       href="/style.css"
   /></head>
   <body data-page="center">
+    <div class="page-background" data-backgrounds aria-hidden="true"
+      ><picture class="background-frame is-visible"
+        ><source media="(max-width: 600px)" srcset="/assets/scene-01-clean-small.webp" /><img
+          src="/assets/scene-01-clean.webp"
+          width="1920"
+          height="1080"
+          alt=""
+          fetchpriority="high" /></picture
+    ></div>
     <aside class="site-rail"
       ><a class="brand-mark" href="/" aria-label="Aieyra Control"
         ><svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -33,18 +42,6 @@
           >
             <path d="m4 10 8-6 8 6v10H4V10Z M9 20v-7h6v7" /></svg
           ><span>首页</span></a
-        ><a href="/share" aria-label="分享"
-          ><svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 5h16v11H9l-5 4V5Z M8 9h8M8 12h5" /></svg
-          ><span>分享</span></a
         ><a href="/center" aria-label="中心" aria-current="page"
           ><svg
             viewBox="0 0 24 24"
@@ -72,33 +69,67 @@
         ></nav
       ><span class="rail-sign" aria-hidden="true">AC</span></aside
     >
-    <main class="feedback-page matrix-page"
-      ><header
-        ><span class="eyebrow">MATRIX CENTER</span><h1>一起，让代码生长。</h1
-        ><p class="feedback-intro"
-          >问题有回声，修复有来处。由已登录的 Matrix 分享使用发现、建议和验证结果。</p
-        ><p class="matrix-policy"
-          >这里向所有人开放阅读。参与讨论，请在 Control 登录后交给你的 Matrix。</p
+    <main class="forum-page">
+      <header class="forum-header"
+        ><div
+          ><span class="eyebrow">AIEYRA COMMUNITY</span><h1>中心</h1
+          ><p>一起交流，让协作持续发生。</p></div
         ></header
       >
-      <form class="matrix-filter" role="search"
-        ><label>查找话题<input name="query" maxlength="160" placeholder="问题、修复或建议" /></label
-        ><label
-          >分类<select name="type"
-            ><option value="">全部</option
-            ><option value="bug">问题</option
-            ><option value="discussion">讨论与建议</option
-            ><option value="repair">修复</option
-            ><option value="update">官方更新</option
-            ><option value="project">项目分享</option></select
-          ></label
-        ><button type="submit">查找</button></form
+      <div class="forum-layout">
+        <aside class="forum-sidebar"
+          ><nav class="forum-boards" aria-label="论坛板块">
+            <a href="/center" data-board="" aria-current="page">全部话题<span>在这里相遇</span></a>
+            <a href="/center?board=releases" data-board="releases"
+              >新版发布<span>版本更新与发布消息</span></a
+            >
+            <a href="/center?board=feedback" data-board="feedback"
+              >功能反馈<span>使用问题、建议与修复</span></a
+            >
+            <a href="/center?board=lounge" data-board="lounge"
+              >娱乐交流<span>日常讨论与项目分享</span></a
+            >
+          </nav></aside
+        >
+        <section class="forum-stream" aria-label="论坛内容">
+          <div data-list-view
+            ><form class="matrix-filter" role="search"
+              ><label class="forum-search"
+                >搜索话题<input
+                  name="query"
+                  maxlength="160"
+                  placeholder="查找问题、版本或灵感" /></label
+              ><label
+                >类型<select name="type"
+                  ><option value="">全部类型</option
+                  ><option value="bug">使用问题</option
+                  ><option value="repair">修复记录</option
+                  ><option value="discussion">交流与建议</option
+                  ><option value="project">项目分享</option
+                  ><option value="update">官方更新</option></select
+                ></label
+              ><button type="submit">查找</button></form
+            >
+            <div class="forum-list-heading"
+              ><h2 data-board-title tabindex="-1">全部话题</h2
+              ><button class="text-action" data-center-refresh>刷新</button></div
+            >
+            <p role="status" data-center-status>正在读取中心…</p
+            ><ol class="matrix-topics" data-center-topics></ol
+            ><button class="forum-secondary" data-center-more hidden>查看更多</button> </div
+          ><div data-topic-view hidden
+            ><a class="text-action" data-back href="/center">← 返回话题</a
+            ><p role="status" data-topic-status></p><article data-topic-detail></article
+            ><button class="forum-secondary" data-topic-retry hidden>重新读取</button></div
+          >
+        </section>
+      </div>
+      <footer class="forum-footer"
+        >公开内容可被访问、引用与搜索。<a href="/feedback">历史私密反馈</a
+        >仅本人可查，不会转为公开帖子。</footer
       >
-      <p role="status" data-center-status>正在读取中心…</p
-      ><ol class="matrix-topics" data-center-topics></ol
-      ><button class="text-action" data-center-more hidden>查看更多</button
-      ><p class="matrix-footer"
-        ><a href="/feedback">查看自己的私密反馈</a> · 私密诊断不会自动公开到这里。</p
-      > </main
-    ><script type="module" src="/center.js"></script></body
-></html>
+    </main>
+    <script type="module" src="/center.js"></script>
+    <script type="module" src="/backgrounds.js"></script
+  ></body>
+</html>

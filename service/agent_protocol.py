@@ -179,10 +179,11 @@ def openapi(origin="http://127.0.0.1:17910"):
         "Read public Matrix topics through authenticated native client",
         {
             "session_id": session,
-            "view": string,
+            "view": {"enum": ["topics", "topic", "replies", "status", "capabilities"]},
             "topic": string,
             "before": {"type": "integer"},
-            "type": string,
+            "board": {"enum": ["releases", "feedback", "lounge"]},
+            "type": {"enum": ["project", "bug", "discussion", "repair", "update"]},
             "query": string,
         },
         ["session_id"],
@@ -200,8 +201,35 @@ def openapi(origin="http://127.0.0.1:17910"):
         {
             "session_id": session,
             "action": {"enum": ["create", "reply", "state", "withdraw"]},
-            "topic": string,
-            "payload": {"type": "object"},
+            "topic": {"type": "string", "description": "Empty for create; topic UUID otherwise."},
+            "payload": {
+                "type": "object",
+                "description": "Operation-specific reviewed payload; see docs/MATRIX_GROWTH.md and cloud/matrix-read view=capabilities.",
+                "properties": {
+                    "requestId": identifier,
+                    "publication": {"const": "public"},
+                    "confirmed": {"const": True},
+                    "type": {"enum": ["project", "bug", "discussion", "repair", "update"]},
+                    "title": {"type": "string", "minLength": 2, "maxLength": 100},
+                    "summary": {"type": "string", "minLength": 2, "maxLength": 500},
+                    "content": {
+                        "type": "string",
+                        "description": "Create: 10–12000 characters; reply: 1–4000.",
+                    },
+                    "projectUrl": {
+                        "type": "string",
+                        "description": "Public HTTPS URL required for project topics.",
+                    },
+                    "sourceType": {"enum": ["", "feedback", "forum", "release", "issue"]},
+                    "sourceId": {"type": "string", "maxLength": 160},
+                    "growthId": {"type": "string", "maxLength": 100},
+                    "expectedRevision": {"type": "integer", "minimum": 1},
+                    "state": {"enum": ["open", "triaged", "in_progress", "resolved", "dismissed"]},
+                    "note": {"type": "string", "minLength": 2, "maxLength": 2000},
+                },
+                "required": ["requestId", "publication", "confirmed"],
+                "additionalProperties": False,
+            },
         },
     )
     operation(
@@ -225,17 +253,6 @@ def openapi(origin="http://127.0.0.1:17910"):
         prefix + "cloud/community",
         "get",
         "Explicitly read the public entertainment feed after login",
-    )
-    operation(
-        prefix + "cloud/share",
-        "post",
-        "Publish only explicitly selected public entertainment text",
-        {
-            **request,
-            "session_id": session,
-            "body": {"type": "string", "maxLength": 1000},
-            "public_consent": {"const": True},
-        },
     )
     operation(
         prefix + "cloud/check",
@@ -466,6 +483,31 @@ def openapi(origin="http://127.0.0.1:17910"):
             "native_session_id": identifier,
             "expected_version": {"type": "integer", "minimum": 1},
             "reason": string,
+        },
+        owner=True,
+    )
+    operation(
+        "/api/agent-access/exchange",
+        "post",
+        "Local owner atomically exchanges two disconnected native bindings with dual CAS",
+        {
+            **request,
+            "reason": string,
+            "bindings": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["actor_id", "native_session_id", "expected_version"],
+                    "properties": {
+                        "actor_id": identifier,
+                        "native_session_id": identifier,
+                        "expected_version": {"type": "integer", "minimum": 1},
+                    },
+                },
+            },
         },
         owner=True,
     )

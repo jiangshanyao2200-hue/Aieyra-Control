@@ -750,6 +750,46 @@ class StationTests(unittest.TestCase):
         self.assertEqual(outputs[0]["credential"], outputs[1]["credential"])
         self.assertEqual(len(self.app.agent_access.listing()["credentials"]), 2)
 
+    def test_create_rejects_profile_in_software_before_writing_or_enrolling(self):
+        software = self.root / "installation"
+        software.mkdir()
+        profile = software / "private" / "station.json"
+        with patch.dict(os.environ, {"AIEYRA_CONTROL_HOME": str(software)}):
+            with patch.object(adapter.ENROLL, "enroll") as enroll:
+                with self.assertRaisesRegex(ValueError, "private_storage_must_be_outside_software"):
+                    self.create(profile_path=profile)
+                enroll.assert_not_called()
+        self.assertEqual(list(software.iterdir()), [])
+
+    def test_enrollment_rejects_software_output_before_writing_or_connecting(self):
+        software = self.root / "installation"
+        software.mkdir()
+        output = software / "private" / "credential.json"
+        with patch.dict(os.environ, {"AIEYRA_CONTROL_HOME": str(software)}):
+            with patch.object(adapter.ENROLL, "build_opener") as opener:
+                for resume in (False, True):
+                    with self.assertRaisesRegex(
+                        ValueError, "private_storage_must_be_outside_software"
+                    ):
+                        adapter.ENROLL.enroll("Fixture", "demo", output, resume=resume)
+                opener.assert_not_called()
+            with self.assertRaisesRegex(ValueError, "private_storage_must_be_outside_software"):
+                adapter.ENROLL.save_new(output, {"fixture": True})
+        self.assertEqual(list(software.iterdir()), [])
+
+    def test_station_rejects_software_profile_or_credential_before_reading(self):
+        software = self.root / "installation"
+        software.mkdir()
+        with patch.dict(os.environ, {"AIEYRA_CONTROL_HOME": str(software)}):
+            with self.assertRaisesRegex(ValueError, "private_storage_must_be_outside_software"):
+                adapter.Station(software / "profile.json")
+            profile = adapter.read_json(self.profile)
+            profile["config_file"] = str(software / "credential.json")
+            adapter.atomic(self.profile, profile)
+            with self.assertRaisesRegex(ValueError, "private_storage_must_be_outside_software"):
+                adapter.Station(self.profile)
+        self.assertEqual(list(software.iterdir()), [])
+
     def test_private_json_publication_never_overwrites_existing_bytes(self):
         path = self.root / "existing.json"
         path.write_bytes(b"original")

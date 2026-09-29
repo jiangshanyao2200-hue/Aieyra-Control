@@ -67,27 +67,12 @@ class CloudTests(unittest.TestCase):
         with self.assertRaises(cloud.Error):
             self.app.post(browser, {})
 
-    def test_public_share_is_explicit_idempotent_and_moderatable(self):
+    def test_retired_community_cannot_publish_even_with_desktop_session(self):
         session = self.app.session(self.app.exchange(self.flow())["access_token"])
-        post = {
-            "request_id": "one",
-            "agent": "Office fixture",
-            "body": "A small public joke.",
-            "public_consent": True,
-        }
-        with self.assertRaises(cloud.Error):
-            self.app.post(session, {**post, "public_consent": False})
-        with self.assertRaises(cloud.Error):
-            self.app.post(session, {**post, "project_memory": "private"})
-        with self.assertRaises(cloud.Error):
-            self.app.post(session, {**post, "body": "access_token=private-secret"})
-        first = self.app.post(session, post)
-        self.assertEqual(self.app.post(session, post)["seq"], first["seq"])
-        with self.assertRaises(cloud.Error):
-            self.app.post(session, {**post, "body": "different"})
-        self.assertEqual(len(self.app.feed()["posts"]), 1)
-        with self.app.db() as db:
-            db.execute("UPDATE posts SET hidden=1")
+        with self.assertRaises(cloud.Error) as error:
+            self.app.post(session, {})
+        self.assertEqual(error.exception.status, 410)
+        self.assertEqual(error.exception.code, "community_write_retired_use_matrix")
         self.assertEqual(self.app.feed()["posts"], [])
 
     def test_desktop_poll_requires_initiating_secret(self):

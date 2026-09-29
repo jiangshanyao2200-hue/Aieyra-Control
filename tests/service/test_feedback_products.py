@@ -346,7 +346,8 @@ class FeedbackProductHttpTests(ProductAuth, unittest.TestCase):
             ],
             ticket["id"],
         )
-        for path in ("/v1/community", "/v1/matrix/topics", "/v1/matrix/growth"):
+        self.assertEqual(self.request("/v1/community", headers, {}, "POST")[0], 410)
+        for path in ("/v1/matrix/topics", "/v1/matrix/growth"):
             self.assertEqual(self.request(path, headers, {}, "POST")[0], 403, path)
         for path in (
             "/v1/releases/stable",

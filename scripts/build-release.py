@@ -13,6 +13,7 @@ import time
 import zipfile
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization
+from link_runtime import verify_link
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,7 +30,9 @@ def file_digest(path):
     return value.hexdigest()
 
 
-def build(output, key_path, python_dir, electron_dir, sequence, version=None):
+def build(
+    output, key_path, python_dir, electron_dir, sequence, link_binary, link_sha256, version=None
+):
     package_version = json.loads((ROOT / "desktop/package.json").read_text(encoding="utf-8"))[
         "version"
     ]
@@ -43,6 +46,13 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
     )
     if not service_version or service_version[1] != version:
         raise ValueError("release_version_must_match_service")
+    link = verify_link(link_binary, link_sha256)
+    key = serialization.load_pem_private_key(key_path.read_bytes(), None)
+    public = serialization.load_pem_public_key((ROOT / "config/release-public.pem").read_bytes())
+    if key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    ) != public.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw):
+        raise ValueError("release_signing_key_mismatch")
     if (output / "stable.json").exists():
         raise ValueError("release_output_already_exists")
     output.mkdir(parents=True, exist_ok=True)
@@ -63,7 +73,8 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
         "sequence": sequence,
         "created_at": int(time.time()),
         "minimum_updater": 1,
-        "notes": "支持项目消息流过滤、可靠finish收据、条件记忆读取与持久消息流epoch；修正公开文档路径并加入完整源码历史隐私检查，保留本地成长、未知任务不重放及签名升级精确回退。",
+        "notes": "新增Link设备码与跨设备工位连接，Windows包附带Link0.3.0；支持私人服务器、局域网、Wi-Fi和USB网络。端到端加密保留Agent原身份、显式交接及未知写入核对；只读办公室共享需主动开启。完善公开中心与Agent接入协议。",
+        "runtimes": {"link": link},
         "source": {
             "path": "/artifacts/" + source.name,
             "sha256": file_digest(source),
@@ -74,7 +85,6 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
             for name, data in sorted(files.items())
         },
     }
-    key = serialization.load_pem_private_key(key_path.read_bytes(), None)
 
     def envelope(value):
         raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
@@ -111,6 +121,8 @@ def build(output, key_path, python_dir, electron_dir, sequence, version=None):
         for name, data in sorted(files.items()):
             z.writestr("Aieyra Control/" + name, data)
         z.writestr("Aieyra Control/config/release-baseline.json", baseline)
+        z.write(link_binary, "Aieyra Control/runtime/link/aieyra-link.exe")
+        z.writestr("Aieyra Control/runtime/link/release.json", json.dumps(link))
         z.write(launcher, "Aieyra Control/Aieyra Control.exe")
         for dirname, origin in [("python", python_dir), ("electron", electron_dir)]:
             for p in origin.rglob("*"):
@@ -148,11 +160,22 @@ if __name__ == "__main__":
     p.add_argument("--python-dir", type=Path, required=True)
     p.add_argument("--electron-dir", type=Path, required=True)
     p.add_argument("--sequence", type=int, required=True)
+    p.add_argument("--link-binary", type=Path, required=True)
+    p.add_argument("--link-sha256", required=True)
     p.add_argument("--version", help="Defaults to desktop/package.json; must match service")
     a = p.parse_args()
     print(
         json.dumps(
-            build(a.output, a.key, a.python_dir, a.electron_dir, a.sequence, a.version),
+            build(
+                a.output,
+                a.key,
+                a.python_dir,
+                a.electron_dir,
+                a.sequence,
+                a.link_binary,
+                a.link_sha256,
+                a.version,
+            ),
             ensure_ascii=False,
         )
     )

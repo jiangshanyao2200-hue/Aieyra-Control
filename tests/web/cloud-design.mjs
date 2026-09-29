@@ -19,21 +19,42 @@ const mapping = {
   '/feedback.js': 'feedback.js',
   '/style.css': 'style.css',
   '/site.js': 'site.js',
+  '/backgrounds.js': 'backgrounds.js',
+  '/home-demo.js': 'home-demo.js',
+  '/transitions.js': 'transitions.js',
+  '/assets/collaboration.webp': 'assets/collaboration.webp',
+  '/assets/collaboration-small.webp': 'assets/collaboration-small.webp',
 };
+for (let i = 1; i <= 8; i++)
+  for (const suffix of ['', '-small']) {
+    const name = 'assets/scene-' + String(i).padStart(2, '0') + suffix + '.webp';
+    mapping['/' + name] = name;
+  }
+for (const number of ['01', '02', '03', '05'])
+  for (const suffix of ['', '-small']) {
+    const name = `assets/scene-${number}-clean${suffix}.webp`;
+    mapping['/' + name] = name;
+  }
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://ctrlupdate.aieyra.cn; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const server = createServer(async (req, res) => {
+  if (new URL(req.url, 'http://localhost').pathname === '/share') {
+    res.writeHead(308, { Location: '/center?type=project' });
+    return res.end();
+  }
   const name = mapping[new URL(req.url, 'http://localhost').pathname];
   if (!name) {
     res.writeHead(404);
     return res.end();
   }
   res.writeHead(200, {
-    'Content-Type': name.endsWith('.css')
-      ? 'text/css'
-      : name.endsWith('.js')
-        ? 'text/javascript'
-        : 'text/html; charset=utf-8',
+    'Content-Type': name.endsWith('.webp')
+      ? 'image/webp'
+      : name.endsWith('.css')
+        ? 'text/css'
+        : name.endsWith('.js')
+          ? 'text/javascript'
+          : 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
   });
   res.end(await readFile(path.join(root, 'cloud/site', name)));
@@ -57,7 +78,8 @@ let context,
   replies = [],
   topicFailure = false,
   invalidTopics = false,
-  replyFailure = false;
+  replyFailure = false,
+  detailFailure = false;
 const errors = [],
   results = [];
 const manifest = {
@@ -81,6 +103,9 @@ const topic = (i, type = 'bug') => ({
   content: 'Detailed synthetic evidence ' + i,
   state: 'open',
   author: { name: 'Fixture Matrix' },
+  createdAt: '2026-09-28T00:00:00Z',
+  comments: 3,
+  official: type === 'update',
   projectUrl: type === 'project' ? 'https://example.com/project' : '',
 });
 async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no-preference') {
@@ -145,14 +170,25 @@ async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no
       writes.push(u.pathname);
       return r.fulfill({ status: 403, json: { error: 'browser_read_only' } });
     }
-    if (u.pathname.endsWith('/replies'))
+    if (u.pathname.endsWith('/replies')) {
+      const before = Number(u.searchParams.get('before') || 0),
+        next = before + 2 < replies.length ? before + 2 : null;
       return r.fulfill({
         status: replyFailure ? 503 : 200,
-        json: { items: replies, nextCursor: null, hasMore: false },
+        json: { items: replies.slice(before, before + 2), nextCursor: next, hasMore: !!next },
       });
+    }
     if (u.pathname === '/v1/matrix/topics') {
       const filtered = topics.filter(
         (x) =>
+          (!u.searchParams.get('board') ||
+            (
+              {
+                releases: ['update'],
+                feedback: ['bug', 'repair'],
+                lounge: ['discussion', 'project'],
+              }[u.searchParams.get('board')] || []
+            ).includes(x.type)) &&
           (!u.searchParams.get('type') || x.type === u.searchParams.get('type')) &&
           (!u.searchParams.get('query') || x.title.includes(u.searchParams.get('query'))),
       );
@@ -168,7 +204,10 @@ async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no
       });
     }
     const item = topics.find((x) => u.pathname.endsWith('/' + x.id));
-    return r.fulfill({ status: item ? 200 : 404, json: item ? { item } : { error: 'missing' } });
+    return r.fulfill({
+      status: detailFailure ? 503 : item ? 200 : 404,
+      json: item ? { item } : { error: 'missing' },
+    });
   });
   await page.goto(base + route);
   await page.waitForTimeout(route === '/' ? 1200 : 120);
@@ -176,6 +215,12 @@ async function open(route = '/', width = 1440, height = 940, reducedMotion = 'no
 async function refresh() {
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForTimeout(180);
+}
+async function demoScene(index) {
+  await page.waitForFunction((i) => {
+    const stage = document.querySelector('[data-demo]');
+    return !stage.hidden && stage.dataset.scene === String(i);
+  }, index);
 }
 async function test(name, fn) {
   try {
@@ -199,185 +244,492 @@ async function test(name, fn) {
     replies = [];
     topicFailure = false;
     invalidTopics = false;
-    replyFailure = false;
+    ((replyFailure = false), (detailFailure = false));
   }
 }
 try {
-  await test('minimal-home-title-one-line-and-real-animation', async () => {
+  await test('home-centered-clear-artwork-hover-and-carousel', async () => {
     await open();
-    assert.equal(await page.locator('h1').innerText(), 'Aieyra Control');
-    assert.equal(await page.locator('main p').count(), 1);
-    assert.equal(await page.locator('main a,main button,main article,footer').count(), 0);
-    assert.equal(await page.locator('nav a').count(), 4);
-    assert.equal(await page.locator('[aria-current=page]').getAttribute('href'), '/');
-    const frame = await page.locator('canvas').evaluate((c) => c.toDataURL());
-    await page.waitForTimeout(240);
-    assert.notEqual(await page.locator('canvas').evaluate((c) => c.toDataURL()), frame);
+    assert.equal((await page.locator('h1').innerText()).replace(/\s+/g, ' '), 'Aieyra Control');
+    assert.equal(await page.locator('.hero-copy p').innerText(), '让Agent参与协作，与跨设备协作。');
+    assert.equal(await page.locator('.site-rail nav a').count(), 3);
+    const title = await page.locator('h1').boundingBox();
+    assert.ok(Math.abs(title.y + title.height / 2 - 470) < 8, JSON.stringify(title));
+    assert.ok(
+      await page
+        .locator('.background-frame.is-visible img')
+        .evaluate((i) => i.complete && i.naturalWidth === 1920),
+    );
+    assert.equal(
+      await page
+        .locator('.home-background')
+        .evaluate((e) => getComputedStyle(e, '::after').content),
+      'none',
+    );
+    assert.equal(
+      await page
+        .locator('.background-frame.is-visible img')
+        .evaluate((e) => getComputedStyle(e).opacity),
+      '1',
+    );
+    const before = await page.locator('h1 span').first().boundingBox();
+    await page.locator('h1').hover();
+    await page.waitForTimeout(750);
+    assert.ok((await page.locator('h1 span').first().boundingBox()).x < before.x - 5);
+    await page.mouse.move(10, 10);
+    const scene = await page.locator('[data-backgrounds]').getAttribute('data-scene');
+    await page.waitForFunction(
+      (n) => document.querySelector('[data-backgrounds]').dataset.scene !== n,
+      scene,
+      { timeout: 10000 },
+    );
+    await page.locator('[data-background-toggle]').click();
+    assert.equal(
+      await page.locator('[data-background-toggle]').getAttribute('aria-pressed'),
+      'true',
+    );
     await page.screenshot({ path: path.join(out, 'desktop-home.png') });
   });
-  await test('reduced-motion-freezes-the-scene', async () => {
-    await open('/', 1440, 940, 'reduce');
-    const frame = await page.locator('canvas').evaluate((c) => c.toDataURL());
-    await page.waitForTimeout(200);
-    assert.equal(await page.locator('canvas').evaluate((c) => c.toDataURL()), frame);
+  await test('demo-uses-home-surface-and-native-components', async () => {
+    await open();
+    await page.locator('[data-demo-start]').click();
+    await page.locator('[data-demo-pause]').click();
+    const ui = await page.locator('[data-demo]').evaluate((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      const home = element.closest('main').getBoundingClientRect();
+      return {
+        background: style.backgroundColor,
+        border: style.borderTopWidth,
+        radius: style.borderRadius,
+        shadow: style.boxShadow,
+        blur: style.backdropFilter,
+        fillsHome:
+          rect.x === home.x &&
+          rect.y === home.y &&
+          rect.width === home.width &&
+          rect.height === home.height,
+      };
+    });
+    assert.deepEqual(ui, {
+      background: 'rgba(0, 0, 0, 0)',
+      border: '0px',
+      radius: '0px',
+      shadow: 'none',
+      blur: 'none',
+      fillsHome: true,
+    });
+    assert.equal(await page.locator('dialog,[role="dialog"],iframe').count(), 0);
+    const actual = await readFile(path.join(root, 'web/office-home.js'), 'utf8');
+    const paths = [
+      ...actual.match(/<svg viewBox="-88 -74 176 145"[\s\S]*?<\/svg>/)[0].matchAll(/ d="([^"]+)"/g),
+    ].map((x) => x[1]);
+    assert.deepEqual(
+      await page
+        .locator('.demo-office .home-seat')
+        .first()
+        .locator('path')
+        .evaluateAll((ps) => ps.map((p) => p.getAttribute('d'))),
+      paths,
+    );
+    assert.equal(await page.locator('[data-demo-rail] .home-orb:visible').count(), 3);
+    await page.locator('[data-demo-nav="tasks"]').click();
+    await demoScene(1);
+    assert.equal(await page.locator('.home-task:visible').count(), 3);
+    await page.locator('[data-demo-filter="done"]').click();
+    assert.equal(await page.locator('.home-task:visible').count(), 1);
+    await page.locator('[data-demo-nav="chat"]').click();
+    await demoScene(2);
+    assert.equal(await page.locator('[data-demo-scene]:visible .chat-record').count(), 3);
+    await page.locator('[data-demo-nav="account"]').click();
+    await page.locator('[data-demo-update-check]').click();
+    assert.match(await page.locator('[data-demo-update-status]').innerText(), /演示：签名已验证/);
+    await page.locator('[data-demo-close]').click();
+    await page.locator('[data-site-nav]').waitFor();
+    assert.ok(await page.locator('[data-site-nav]').isVisible());
+    assert.ok(await page.locator('[data-demo-rail]').isHidden());
+    assert.deepEqual(writes, []);
   });
-  await test('four-pages-fit-four-viewports-and-left-navigation', async () => {
+  await test('carousel-only-loads-reviewed-text-free-artwork', async () => {
+    await open();
+    const loaded = [];
+    for (let i = 0; i < 7; i++) {
+      const scene = await page.locator('[data-backgrounds]').getAttribute('data-scene');
+      loaded.push(
+        await page.locator('.background-frame.is-visible img').last().getAttribute('src'),
+      );
+      await page.waitForFunction(
+        (prior) => document.querySelector('[data-backgrounds]').dataset.scene !== prior,
+        scene,
+        { timeout: 10000 },
+      );
+    }
+    for (const image of loaded) assert.ok(!/scene-0[12345](?:-small)?\.webp/.test(image));
+    assert.equal(new Set(loaded).size, 7);
+    assert.equal(
+      await page.locator('.background-frame.is-visible img').last().getAttribute('src'),
+      loaded[0],
+    );
+  });
+  await test('reduced-motion-pauses-carousel-and-demo', async () => {
+    await open('/', 1440, 940, 'reduce');
+    assert.equal(
+      await page.locator('[data-background-toggle]').getAttribute('aria-pressed'),
+      'true',
+    );
+    await page.locator('[data-demo-start]').click();
+    assert.equal(await page.locator('[data-demo-pause]').getAttribute('aria-pressed'), 'true');
+    assert.equal(
+      await page
+        .locator('[data-demo-scene]:visible .demo-step')
+        .first()
+        .evaluate((e) => getComputedStyle(e).animationName),
+      'none',
+    );
+    await page.keyboard.press('Escape');
+    assert.ok(await page.locator('.hero-copy').isVisible());
+  });
+  await test('seven-demo-scenes-pause-next-and-return', async () => {
+    await open();
+    await page.locator('[data-demo-start]').click();
+    await page.locator('[data-demo-pause]').click();
+    for (let i = 0; i < 7; i++) {
+      await demoScene(i);
+      assert.equal(await page.locator('[data-demo]').getAttribute('data-scene'), String(i));
+      assert.equal(await page.locator('[data-demo-scene]:visible').count(), 1);
+      await page.waitForTimeout(50);
+      assert.equal(
+        await page
+          .locator('[data-demo-scene]:visible .demo-step')
+          .first()
+          .evaluate((e) => getComputedStyle(e).opacity),
+        '1',
+      );
+      await page.screenshot({ path: path.join(out, 'demo-desktop-' + i + '.png') });
+      await page.locator('[data-demo-next]').click();
+    }
+    await page.locator('[data-demo]').waitFor({ state: 'hidden' });
+    assert.ok(await page.locator('[data-demo]').isHidden());
+    assert.ok(await page.locator('h1').isVisible());
+    assert.ok(
+      await page.locator('[data-demo-start]').evaluate((e) => e === document.activeElement),
+    );
+    assert.deepEqual(writes, []);
+  });
+  await test('demo-autoplays-all-scenes-and-returns', async () => {
+    await open();
+    await page.clock.install();
+    await page.locator('[data-demo-start]').click();
+    await demoScene(0);
+    for (let i = 1; i < 7; i++) {
+      await page.clock.runFor(5501);
+      await demoScene(i);
+      assert.equal(await page.locator('[data-demo]').getAttribute('data-scene'), String(i));
+    }
+    await page.clock.runFor(5501);
+    await page.locator('[data-demo]').waitFor({ state: 'hidden' });
+    assert.ok(await page.locator('[data-demo]').isHidden());
+    assert.ok(await page.locator('h1').isVisible());
+  });
+  await test('mobile-demo-scenes-and-background-continuity', async () => {
+    await open('/', 390, 844);
+    await page.locator('[data-demo-start]').click();
+    for (let i = 0; i < 7; i++) {
+      await page.locator('[data-demo-step]').nth(i).click();
+      await page.waitForTimeout(2600);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      const overflow = await page
+        .locator('[data-demo]')
+        .evaluate((e) => e.scrollWidth > e.clientWidth + 1);
+      assert.equal(overflow, false);
+      await page.screenshot({ path: path.join(out, 'demo-mobile-' + i + '.png') });
+    }
+    await page.locator('[data-demo-close]').click();
+    await page.locator('[data-demo]').waitFor({ state: 'hidden' });
+    const remembered = await page.locator('[data-backgrounds]').getAttribute('data-scene');
+    const selected = [];
+    for (const route of ['/center', '/download', '/feedback', '/auth/callback']) {
+      await page.goto(base + route);
+      await page.waitForFunction(
+        (scene) => document.querySelector('[data-backgrounds]').dataset.scene === scene,
+        remembered,
+      );
+      await page.locator('.background-frame.is-visible img').last().waitFor();
+      assert.ok(
+        await page
+          .locator('.background-frame.is-visible img')
+          .last()
+          .evaluate((i) => i.complete && i.naturalWidth > 0),
+      );
+      selected.push(await page.locator('[data-backgrounds]').getAttribute('data-scene'));
+      if (route === '/center') assert.equal(await page.locator('.forum-about').count(), 0);
+    }
+    assert.deepEqual(selected, Array(4).fill(remembered));
+  });
+  await test('three-pages-fit-five-viewports', async () => {
     for (const [w, h] of [
       [1440, 940],
       [820, 680],
       [390, 844],
       [320, 640],
-    ]) {
-      for (const route of ['/', '/share', '/center', '/download']) {
+      [800, 400],
+    ])
+      for (const route of ['/', '/center', '/download']) {
         await open(route, w, h);
         if (route === '/download') await page.locator('.download-primary').first().waitFor();
-        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-        const nav = await page.locator('.site-rail').boundingBox();
-        assert.equal(nav.x, 0);
-        for (const a of await page.locator('nav a').all()) {
-          const r = await a.boundingBox();
+        assert.ok(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+          route + ' ' + w,
+        );
+        const rail = await page.locator('.site-rail').boundingBox();
+        for (const link of await page.locator('.site-rail nav a').all()) {
+          const box = await link.boundingBox();
           assert.ok(
-            r.width >= 44 &&
-              r.height >= 44 &&
-              r.x >= 0 &&
-              r.x + r.width <= nav.width &&
-              r.y >= 0 &&
-              r.y + r.height <= h,
+            box.width >= 44 &&
+              box.height >= 44 &&
+              box.x >= 0 &&
+              box.x + box.width <= rail.width &&
+              box.y >= 0 &&
+              box.y + box.height <= h,
           );
         }
-        const h1 = await page.locator('h1').boundingBox();
-        assert.ok(h1.x >= nav.width && h1.x + h1.width <= w + 0.5);
+        const title = await page.locator('h1').boundingBox();
+        assert.ok(title.x >= rail.width && title.x + title.width <= w + 1);
         await page.screenshot({
           path: path.join(out, `${w}-${route.slice(1) || 'home'}.png`),
           fullPage: true,
         });
         await context.close();
       }
+  });
+  await test('small-and-short-demo-remains-readable-and-exitable', async () => {
+    for (const [width, height] of [
+      [320, 640],
+      [800, 400],
+    ]) {
+      await open('/', width, height);
+      await page.locator('[data-demo-start]').click();
+      await page.locator('[data-demo-pause]').click();
+      for (let i = 0; i < 7; i++) {
+        await page.locator('[data-demo-step]').nth(i).click();
+        await demoScene(i);
+        const layout = await page.evaluate(() => {
+          const scenes = document.querySelector('.demo-scenes');
+          const viewport = scenes.getBoundingClientRect();
+          const toolbar = document.querySelector('.demo-toolbar').getBoundingClientRect();
+          const footer = document.querySelector('.demo-footer').getBoundingClientRect();
+          const scene = document.querySelector('[data-demo-scene]:not([hidden])');
+          const top = scene.getBoundingClientRect().top;
+          scenes.scrollTop = scenes.scrollHeight;
+          const bottom = scene.getBoundingClientRect().bottom;
+          return {
+            separated: viewport.top >= toolbar.bottom && viewport.bottom <= footer.top,
+            startVisible: top >= viewport.top - 1,
+            endReachable: bottom <= viewport.bottom + 1,
+            controlsVisible: footer.bottom <= innerHeight && toolbar.top >= 0,
+          };
+        });
+        assert.deepEqual(layout, {
+          separated: true,
+          startVisible: true,
+          endReachable: true,
+          controlsVisible: true,
+        });
+        if ([0, 4, 6].includes(i))
+          await page.screenshot({ path: path.join(out, `demo-${width}-${i}-end.png`) });
+        assert.equal(
+          await page.locator('[data-demo]').evaluate((e) => e.scrollWidth > e.clientWidth + 1),
+          false,
+        );
+        assert.equal(
+          await page
+            .locator('[data-demo-scene]:visible .demo-step')
+            .first()
+            .evaluate((e) => getComputedStyle(e).opacity),
+          '1',
+        );
+      }
+      await page.locator('[data-demo-close]').click();
+      await page.locator('h1').waitFor();
+      assert.ok(await page.locator('h1').isVisible());
+      await context.close();
     }
   });
-  await test('center-public-text-safe-read-only-detail-and-replies', async () => {
-    topics = [topic(1), topic(2)];
-    topics[0].title = '<img src=x onerror=alert(1)>';
-    topics[0].content = '<script>malicious()</script> literal evidence';
-    replies = [{ author: { name: '<img src=x>' }, content: 'Public reply text' }];
+  await test('three-boards-filter-projects-feedback-and-releases', async () => {
+    topics = [
+      topic(1),
+      topic(2, 'repair'),
+      topic(3, 'discussion'),
+      topic(4, 'project'),
+      topic(5, 'update'),
+    ];
     await open('/center');
-    await page.locator('.matrix-topics > li').first().waitFor();
-    assert.equal(await page.locator('.matrix-topics > li').count(), 2);
-    await page.locator('.matrix-topics summary').first().click();
-    await page.locator('.matrix-content').waitFor();
-    assert.ok((await page.locator('.matrix-content').innerText()).includes('<script>'));
-    await page.getByRole('button', { name: '读取回复', exact: true }).click();
-    await page.getByText('Public reply text', { exact: true }).waitFor();
-    assert.equal(
-      await page
-        .locator('.matrix-topics img,.matrix-topics script,textarea,[contenteditable=true]')
-        .count(),
-      0,
-    );
-    assert.equal(await page.locator('form').getAttribute('role'), 'search');
+    for (const [board, count] of [
+      ['releases', 1],
+      ['feedback', 2],
+      ['lounge', 2],
+    ]) {
+      await page.locator(`[data-board="${board}"]`).click();
+      await page.waitForFunction(
+        ([name, n]) =>
+          document.querySelector('[data-board][aria-current]')?.dataset.board === name &&
+          !document.querySelector('[data-center-topics]').hasAttribute('aria-busy') &&
+          document.querySelectorAll('.matrix-topics>li').length === n,
+        [board, count],
+      );
+      assert.equal(
+        await page.locator('[data-board][aria-current]').getAttribute('data-board'),
+        board,
+      );
+    }
     await page.screenshot({ path: path.join(out, 'center-populated.png'), fullPage: true });
   });
-  await test('share-lists-projects-with-safe-project-link', async () => {
+  await test('public-detail-deeplink-text-safety-and-reply-pagination-retry', async () => {
+    topics = [topic(1)];
+    topics[0].title = '<img src=x onerror=alert(1)>';
+    topics[0].content = '<script>malicious()</script> literal evidence';
+    replies = Array.from({ length: 5 }, (_, i) => ({
+      id: 'reply-' + i,
+      author: { name: '<img src=x>' },
+      content: 'Public reply ' + i,
+      createdAt: '2026-09-28T00:00:00Z',
+    }));
+    await open('/center?topic=' + topics[0].id);
+    await page.locator('.matrix-replies li').nth(1).waitFor();
+    assert.ok((await page.locator('.matrix-content').innerText()).includes('<script>'));
+    assert.equal(
+      await page.locator('[data-topic-detail] img,[data-topic-detail] script').count(),
+      0,
+    );
+    replyFailure = true;
+    await page.getByRole('button', { name: '查看更多回复', exact: true }).click();
+    await page.getByRole('button', { name: '重试读取回复' }).waitFor();
+    assert.equal(await page.locator('.matrix-replies li').count(), 2);
+    replyFailure = false;
+    await page.getByRole('button', { name: '重试读取回复' }).click();
+    await page.locator('.matrix-replies li').nth(3).waitFor();
+    await page.getByRole('button', { name: '查看更多回复', exact: true }).click();
+    await page.locator('.matrix-replies li').nth(4).waitFor();
+    assert.equal(await page.locator('.matrix-replies li').count(), 5);
+    await page.screenshot({ path: path.join(out, 'topic-replies.png'), fullPage: true });
+    assert.equal(await page.locator('[data-composer], [data-compose], [data-draft]').count(), 0);
+    assert.deepEqual(writes, []);
+  });
+  await test('topic-failure-retry-and-missing-topic', async () => {
+    topics = [topic(1)];
+    detailFailure = true;
+    await open('/center?topic=' + topics[0].id);
+    await page.locator('[data-topic-retry]').waitFor();
+    detailFailure = false;
+    await page.locator('[data-topic-retry]').click();
+    await page.locator('.matrix-content').waitFor();
+    await page.goto(base + '/center?topic=invalid');
+    await page.getByText('该话题不存在或已撤回。', { exact: true }).waitFor();
+    assert.ok(await page.locator('[data-topic-retry]').isHidden());
+  });
+  await test('share-redirect-projects-safe-link-and-back-navigation', async () => {
     topics = [topic(1), topic(2, 'project'), topic(3, 'project')];
     await open('/share', 390, 844);
-    await page.locator('.matrix-topics > li').first().waitFor();
-    assert.equal(await page.locator('.matrix-topics > li').count(), 2);
-    assert.equal(await page.locator('select').count(), 0);
-    await page.locator('.matrix-topics summary').first().click();
-    const link = page.getByRole('link', { name: '查看项目' });
+    await page.locator('.topic-link').nth(1).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/center');
+    assert.equal(new URL(page.url()).searchParams.get('type'), 'project');
+    await page.locator('.topic-link').first().click();
+    const link = page.getByRole('link', { name: '查看项目 ↗' });
     await link.waitFor();
     assert.equal(await link.getAttribute('href'), 'https://example.com/project');
     assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
-    assert.ok(!(await page.locator('.matrix-topics').innerText()).includes('Synthetic topic 1'));
-    await page.screenshot({ path: path.join(out, 'share-project-mobile.png'), fullPage: true });
-  });
-  await test('center-pagination-retains-loaded-content-on-failure-and-retries', async () => {
-    topics = [topic(1), topic(2), topic(3), topic(4), topic(5)];
-    await open('/center');
-    await page.locator('[data-center-more]').waitFor({ state: 'visible' });
-    await page.locator('.matrix-topics summary').first().click();
+    await page.reload();
     await page.locator('.matrix-content').waitFor();
+    await page.locator('[data-back]').click();
+    await page.locator('.topic-link').nth(1).waitFor();
+    await page.goBack();
+    await page.locator('.matrix-content').waitFor();
+  });
+  await test('topic-list-pagination-failure-preserves-content-and-retries', async () => {
+    topics = [1, 2, 3, 4, 5].map((i) => topic(i));
+    await open('/center');
+    await page.locator('[data-center-more]').waitFor();
     topicFailure = true;
     await page.locator('[data-center-more]').click();
     await page.getByText('更多话题暂时无法读取，已显示内容保留。', { exact: true }).waitFor();
-    assert.equal(await page.locator('.matrix-topics > li').count(), 2);
-    assert.equal(await page.locator('details[open]').count(), 1);
+    assert.equal(await page.locator('.matrix-topics>li').count(), 2);
     topicFailure = false;
     await page.locator('[data-center-more]').click();
-    await page.waitForFunction(() => document.querySelectorAll('.matrix-topics > li').length === 4);
+    await page.locator('.topic-link').nth(3).waitFor();
     await page.locator('[data-center-more]').click();
-    await page.waitForFunction(() => document.querySelectorAll('.matrix-topics > li').length === 5);
+    await page.locator('.topic-link').nth(4).waitFor();
     assert.ok(await page.locator('[data-center-more]').isHidden());
   });
-  await test('center-filters-and-invalid-response-recover-without-stale-pagination', async () => {
-    topics = [topic(1), topic(2), topic(3), topic(4, 'repair')];
+  await test('search-keyboard-filters-and-invalid-shape-recovery', async () => {
+    topics = [topic(1), topic(2), topic(3, 'repair')];
     await open('/center');
-    await page.locator('[data-center-more]').waitFor({ state: 'visible' });
-    await page.locator('select[name=type]').selectOption('repair');
-    await page.getByRole('button', { name: '查找', exact: true }).click();
-    await page.waitForFunction(
-      () => document.querySelector('[data-center-status]').textContent === '已展示 1 个话题',
-    );
-    assert.ok((await page.locator('.matrix-topics').innerText()).includes('Synthetic topic 4'));
-    assert.ok(await page.locator('[data-center-more]').isHidden());
+    await page.locator('.matrix-filter select[name=type]').selectOption('repair');
+    await page.locator('input[name=query]').fill('Synthetic topic 3');
+    await page.locator('input[name=query]').press('Enter');
+    await page.getByText('已展示 1 个话题', { exact: true }).waitFor();
     invalidTopics = true;
-    await page.getByRole('button', { name: '查找', exact: true }).click();
-    await page.getByText('暂时无法读取，请使用查找重试。', { exact: true }).waitFor();
+    await page.locator('[data-center-refresh]').click();
+    await page.getByText('暂时无法读取中心，请点击刷新重试。', { exact: true }).waitFor();
     assert.ok(await page.locator('[data-center-more]').isHidden());
     invalidTopics = false;
-    await page.getByRole('button', { name: '查找', exact: true }).click();
-    await page.locator('.matrix-topics > li').first().waitFor();
+    await page.locator('[data-center-refresh]').click();
+    await page.locator('.topic-link').waitFor();
   });
-  await test('empty-share-and-center-never-invent-content', async () => {
-    for (const route of ['/share', '/center']) {
-      await open(route, 320, 640);
-      await page.waitForFunction(() =>
-        document.querySelector('[data-center-status]').textContent.includes('暂时没有'),
-      );
-      assert.equal(await page.locator('.matrix-topics > li').count(), 0);
-      await page.screenshot({
-        path: path.join(out, 'empty-' + route.slice(1) + '-mobile.png'),
-        fullPage: true,
-      });
-      await context.close();
-    }
+  await test('empty-center-and-200percent-text-fit', async () => {
+    await open('/center', 320, 640);
+    await page.getByText('暂时没有话题。', { exact: true }).waitFor();
+    assert.equal(await page.locator('.topic-link').count(), 0);
+    await page.evaluate(() => (document.documentElement.style.fontSize = '32px'));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    await page.screenshot({ path: path.join(out, 'center-200percent.png'), fullPage: true });
   });
-  await test('center-and-share-text-zoom-and-keyboard-search-fit', async () => {
-    for (const route of ['/share', '/center']) {
-      topics = [topic(1, 'project'), topic(2)];
-      await open(route, 390, 844);
-      await page.evaluate(() => (document.documentElement.style.fontSize = '32px'));
-      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      const heading = await page.locator('h1').boundingBox();
-      const rail = await page.locator('.site-rail').boundingBox();
-      assert.ok(heading.x >= rail.width);
-      await page.locator('input[name=query]').fill('Synthetic topic 1');
-      await page.locator('input[name=query]').press('Enter');
-      await page.waitForFunction(
-        () => document.querySelectorAll('.matrix-topics > li').length === 1,
-      );
-      await page.screenshot({
-        path: path.join(out, route.slice(1) + '-200percent.png'),
-        fullPage: true,
-      });
-      await context.close();
-    }
+  await test('public-center-is-read-only-and-retains-list-on-failed-refresh', async () => {
+    topics = [topic(1), topic(2)];
+    await open('/center', 390, 844);
+    await page.locator('.topic-link').nth(1).waitFor();
+    assert.equal(await page.locator('[data-composer], [data-compose], [data-draft]').count(), 0);
+    topicFailure = true;
+    await page.locator('[data-center-refresh]').click();
+    await page.getByText('暂时无法读取中心，请点击刷新重试。', { exact: true }).waitFor();
+    assert.equal(await page.locator('.topic-link').count(), 2);
+    assert.deepEqual(writes, []);
   });
-  await test('download-links-real-release-hash-collapsed', async () => {
-    await open('/download');
-    await page.locator('.download-primary').first().waitFor();
-    assert.equal(await page.locator('[data-downloads] a').count(), 4);
+  await test('demo-transition-interruption-restores-home-and-keyboard-focus', async () => {
+    await open('/', 390, 844);
+    await page.locator('[data-demo-start]').click();
+    await page.locator('[data-demo-close]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-demo-start]').waitFor();
+    await page.waitForTimeout(300);
+    assert.ok(await page.locator('[data-demo]').isHidden());
     assert.equal(
-      await page.locator('.download-primary').first().getAttribute('href'),
+      await page.evaluate(() => document.activeElement?.hasAttribute('data-demo-start')),
+      true,
+    );
+    assert.ok(await page.locator('[data-site-nav]').isVisible());
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      false,
+    );
+  });
+  await test('download-only-windows-retains-signed-manifest-hash', async () => {
+    await open('/download');
+    await page.locator('.download-primary').waitFor();
+    assert.equal(await page.locator('[data-downloads] a').count(), 2);
+    assert.equal(
+      await page.locator('.download-primary').getAttribute('href'),
       'https://ctrlupdate.aieyra.cn' + manifest.platforms['windows-x64'].path,
     );
+    assert.equal(await page.locator('h1').innerText(), '现在就下载');
+    assert.equal(await page.locator('.download-note').innerText(), '体验新时代Agent协作。');
+    assert.ok(!(await page.locator('main').innerText()).includes('Mac'));
     assert.ok(
       (await page.locator('[data-hash]').textContent()).includes(
         manifest.platforms['windows-x64'].sha256,
       ),
     );
-    assert.equal(await page.locator('.release-details').getAttribute('open'), null);
-    await page.locator('.release-details summary').click();
+    assert.equal(await page.locator('[data-release-details]').getAttribute('open'), null);
+    await page.locator('[data-release-details] summary').click();
     assert.ok(await page.locator('[data-hash]').isVisible());
   });
   await test('download-failure-retry-has-no-fake-link', async () => {
@@ -385,6 +737,8 @@ try {
     await open('/download');
     assert.equal(await page.locator('[data-downloads] a[href*=artifacts]').count(), 0);
     assert.ok(await page.locator('[data-release-retry]').isVisible());
+    assert.ok(await page.locator('[data-link-guide]').isVisible());
+    assert.ok(!(await page.locator('[data-release-details]').isVisible()));
     releaseFail = false;
     await page.locator('[data-release-retry]').click();
     await page.locator('.download-primary').first().waitFor();
@@ -400,6 +754,11 @@ try {
       'https://github.com/jiangshanyao2200-hue/Aieyra-Control',
     );
     assert.ok(!calls.slice(before).includes('/v1/releases/stable'));
+    assert.ok(await page.locator('[data-link-guide]').isVisible());
+    await page.locator('[data-link-guide] summary').click();
+    assert.ok(await page.getByRole('link', { name: '部署与连接说明' }).isVisible());
+    assert.ok((await page.locator('[data-link-guide]').innerText()).includes('私人服务器'));
+    assert.ok(!(await page.locator('[data-release-details]').isVisible()));
     await page.screenshot({ path: path.join(out, 'anonymous-download.png') });
   });
   await test('malformed-login-state-recovers-without-crashing', async () => {

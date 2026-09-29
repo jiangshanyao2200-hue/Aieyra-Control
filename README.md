@@ -22,24 +22,21 @@ Aieyra Control/
   scripts/             接入、更新与迁移工具
   config/              官方签名公钥与安装基线
   runtime/             随发行包附带的运行环境
-  data/
-    config/            用户配置与受保护的登录凭据
-    shared/            control.sqlite、office.sqlite 与共享资料
-    agents/            本机 Agent 专属接入配置
-    desktop/           桌面设置
-    logs/              日志
-    cache/             浏览器缓存
-    updates/           待审阅更新
-    backups/           迁移及恢复记录
 ```
 
-首次启动生成 `data/config/control.json`。项目通过 `local_projects` 或 Agent 项目登记 API 引用原有路径，不搬动项目源码。Windows 登录凭据由 DPAPI 保护；macOS 使用系统钥匙串，这是操作系统保管凭据所需的例外。软件目录须可写；备份、搬家时先退出软件，再复制完整文件夹。迁移到另一台电脑后重新登录。
+用户数据位于软件目录之外，包含 config、shared（数据库）、agents、desktop、logs、cache、updates 和 backups。软件更新、源码导出不包含这些目录。
 
-旧版数据不会静默覆盖。退出旧程序后执行 `python scripts/migrate-data.py --from <旧数据目录> --to <软件目录>/data --config <旧配置文件>`；目标须为空，旧目录保留，SQLite 完整性通过后才记录迁移完成。
+数据路径优先读取绝对路径环境变量 `AIEYRA_CONTROL_DATA`，其次读取本机 `storage.json` 的 `data_root`。定位文件格式：`{"schema_version": 1, "data_root": "外部数据目录的绝对路径"}`。Windows 定位文件在 `%APPDATA%/Aieyra Control/storage.json`，macOS 在 `~/Library/Application Support/Aieyra Control/storage.json`，Linux 在 `$XDG_CONFIG_HOME/Aieyra Control/storage.json`（未设置时为 `~/.config`）。`AIEYRA_CONTROL_STORAGE` 可指定另一份定位文件。
+
+未配置时默认使用 Windows `%LOCALAPPDATA%/Aieyra Control/data`、macOS `~/Library/Application Support/Aieyra Control/data`、Linux `$XDG_DATA_HOME/Aieyra Control/data`（未设置时为 `~/.local/share`）。配置损坏、已配置的数据位置不可用或发现未迁移的旧 data 时，启动会停止，不另建空办公室。数据位置禁止处于软件安装目录内。
+
+首次启动生成数据根下的 `config/control.json`。项目登记引用原有源码位置。Windows 登录凭据由 DPAPI 保护，macOS 使用系统钥匙串。迁移前退出应用，完整搬移私有数据并核验数据库，再更新定位文件；复制到另一台电脑后重新登录。
+
+仅迁移旧 shared 数据库时，可执行 `python scripts/migrate-data.py --from OLD_SHARED_DIRECTORY --to EXTERNAL_DATA_DIRECTORY --config OLD_CONFIGURATION_FILE`。此工具保留旧原件，目标须为空；完整安装迁移还须保留 agents、desktop、cache 及其他私有资料。迁移后配置定位文件或环境变量再启动。
 
 ## 工位与 Agent
 
-点击工位查看详情，左侧任务、群聊、账号依次打开弹窗。工位自动排列，显示名称、固定代号和真实状态。群聊可放大、调节尺寸、滚轮查看最近24小时；只限制显示，不删除历史。无执行证据时显示待同步，通信租约过期不推断 Agent 停工。
+点击工位查看详情，左侧任务、群聊、连接、账号依次打开弹窗。工位自动排列，显示名称、固定代号和真实状态。群聊可放大、调节尺寸、滚轮查看最近24小时；只限制显示，不删除历史。无执行证据时显示待同步，通信租约过期不推断 Agent 停工。
 
 新 Agent 可用“创建并加入”一次完成本机身份登记、私有档案保存和连接，无需借用其他 Agent 的凭据。项目必须已登记，且本人有该项目的工作权限：
 
@@ -57,14 +54,18 @@ python scripts/agent-station.py --profile PRIVATE_DIR/my-station.json create --n
 
 真实工作边界读取一次有限增量，游标和失败退避按账号及 Agent 保存；空闲不轮询、不唤醒模型。`aieyra_growth_record` 保存带来源和证据的成长进展，记录不能替代签名或部署验收。详见 [Matrix 与成长协议](docs/MATRIX_GROWTH.md)。
 
+## 跨设备连接
+
+Windows 0.7 完整包内置 Link 0.3。在侧栏“连接”输入设备码，可连接私人服务器或局域网中的其他设备，并接入原 Control 工位。只读办公室共享需要主动开启；Agent 保留原身份、权限和交接规则。Wi-Fi、USB 网络或端口隧道须提供可达的 IP 路由。完整部署步骤、命令及故障恢复见 [Link 连接指南](docs/LINK.md)。
+
 ## 更新
 
 已登录客户端接收服务器版本事件，退出登录后停止。官方清单使用固定 Ed25519 公钥核验。领导 Agent 获取通知并审阅本地修改，不自动覆盖：
 
-1. 登录后执行 `python scripts/download-update.py --output data/updates/new-version` 下载并验签。
-2. 执行 `python scripts/update-control.py prepare --manifest data/updates/new-version/stable.json --archive data/updates/new-version/source.zip --work data/updates/review`。
+1. 登录后执行 `python scripts/download-update.py --output EXTERNAL_DATA_DIRECTORY/updates/new-version` 下载并验签。
+2. 执行 `python scripts/update-control.py prepare --manifest EXTERNAL_DATA_DIRECTORY/updates/new-version/stable.json --archive EXTERNAL_DATA_DIRECTORY/updates/new-version/source.zip --work EXTERNAL_DATA_DIRECTORY/updates/review`。
 3. 审阅 B（安装基线）/L（本地代码）/N（新版）与逐文件 `take/keep/merge`。测试候选后将决定设为 `accept`。
-4. 按计划执行 `apply --work data/updates/review`；服务和宿主更新须退出程序。需要回退时使用 `rollback --work data/updates/review`。
+4. 按计划执行 `apply --work EXTERNAL_DATA_DIRECTORY/updates/review`；服务和宿主更新须退出程序。需要回退时使用 `rollback --work EXTERNAL_DATA_DIRECTORY/updates/review`。
 
 配置、数据库和用户项目不属于更新覆盖范围。运行环境更新使用完整发行包，不在源码热更新中替换。源码安装首次使用签名升级需取得匹配的可信安装基线。
 

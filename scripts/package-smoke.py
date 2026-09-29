@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import hashlib
 import os
 import socket
 import subprocess
@@ -22,7 +23,32 @@ def smoke(root, mac=False):
         executable = root / (
             "Aieyra Control.app/Contents/MacOS/Electron" if mac else "runtime/electron/electron.exe"
         )
-        env = {**os.environ, "AIEYRA_CONTROL_HOME": str(temporary), "ELECTRON_RUN_AS_NODE": "1"}
+        env = {
+            **os.environ,
+            "AIEYRA_CONTROL_HOME": str(root),
+            "AIEYRA_CONTROL_DATA": str(temporary / "data"),
+            "ELECTRON_RUN_AS_NODE": "1",
+        }
+        env.pop("AIEYRA_LINK_BINARY", None)
+        link_root = root / "runtime/link"
+        has_link = (link_root / "release.json").is_file()
+        if has_link:
+            link = link_root / ("aieyra-link" if mac else "aieyra-link.exe")
+            expected = json.loads((link_root / "release.json").read_text(encoding="utf-8"))
+            if hashlib.sha256(link.read_bytes()).hexdigest() != expected["sha256"]:
+                raise RuntimeError("packaged_link_hash_mismatch")
+            result = subprocess.run(
+                [str(link), "version"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if result.returncode or result.stdout.strip() != "Aieyra Link " + expected["version"]:
+                raise RuntimeError("packaged_link_version_mismatch")
+            print("PASS packaged " + result.stdout.strip(), flush=True)
+        elif not mac:
+            raise RuntimeError("packaged_link_missing")
         probe = subprocess.run(
             [
                 str(executable),
@@ -82,6 +108,13 @@ def smoke(root, mac=False):
                 for route in ("/api/snapshot", "/api/registry", "/api/cloud"):
                     with urllib.request.urlopen(f"http://127.0.0.1:{port}" + route, timeout=5) as r:
                         json.load(r)
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/link", timeout=5) as r:
+                    link_status = json.load(r)
+                    if (
+                        link_status.get("installed") is not has_link
+                        or link_status.get("connections") != []
+                    ):
+                        raise RuntimeError("packaged_link_status_mismatch")
                 if not (temporary / "data/shared/office.sqlite").exists():
                     raise RuntimeError("shared_data_missing")
                 print("PASS packaged Python, SQLite, read APIs and portable storage", flush=True)

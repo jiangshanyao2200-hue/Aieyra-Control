@@ -22,7 +22,11 @@ spec.loader.exec_module(control)
 class HTTPRejectionTests(unittest.TestCase):
     def setUp(self):
         self.effects = []
-        self.app = SimpleNamespace(csrf="isolated-csrf", submit=self.submit)
+        self.app = SimpleNamespace(
+            csrf="isolated-csrf",
+            submit=self.submit,
+            device_link=SimpleNamespace(start=lambda origin: None, close=lambda: None),
+        )
         self.server = control.Server(0, self.app)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

@@ -546,3 +546,63 @@ body {
   opacity: 0.5;
   cursor: wait;
 }
+
+.office-location {
+  position: fixed;
+  top: 18px;
+  left: 24px;
+  font-size: 12px;
+  opacity: 0.65;
+  pointer-events: none;
+}
+.link-panel {
+  max-width: 680px;
+  margin: auto;
+}
+.link-panel p {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.link-panel label {
+  display: block;
+  margin: 10px 0;
+}
+.link-panel input:not([type='checkbox']),
+.link-panel textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  margin-top: 6px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #8886;
+  border-radius: 10px;
+}
+.link-panel textarea {
+  min-height: 80px;
+}
+.link-panel button {
+  padding: 8px 12px;
+  margin: 5px 8px 5px 0;
+  border: 1px solid #8886;
+  border-radius: 20px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.link-panel article {
+  margin-top: 20px;
+  border-top: 1px solid #8884;
+  padding-top: 12px;
+}
+.link-service {
+  padding: 12px 0;
+}
+.link-service > span,
+.link-service > code {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}

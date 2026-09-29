@@ -227,10 +227,11 @@ TOOLS = [
         schema(
             {
                 "session_id": STR,
-                "view": STR,
+                "view": {"enum": ["topics", "topic", "replies", "status", "capabilities"]},
                 "topic": STR,
                 "before": {"type": "integer"},
-                "type": STR,
+                "board": {"enum": ["releases", "feedback", "lounge"]},
+                "type": {"enum": ["project", "bug", "discussion", "repair", "update"]},
                 "query": STR,
             },
             ("session_id",),
@@ -245,7 +246,41 @@ TOOLS = [
         "aieyra_matrix_publish",
         "Submit reviewed public product intelligence: create, reply, state or withdraw. Logged-in native proof required. Retain requestId after unknown outcome; no private projects or chats.",
         schema(
-            {"session_id": STR, "action": STR, "topic": STR, "payload": {"type": "object"}},
+            {
+                "session_id": STR,
+                "action": {"enum": ["create", "reply", "state", "withdraw"]},
+                "topic": {
+                    "type": "string",
+                    "description": "Empty for create; topic UUID otherwise.",
+                },
+                "payload": schema(
+                    {
+                        "requestId": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,100}$"},
+                        "publication": {"const": "public"},
+                        "confirmed": {"const": True},
+                        "type": {"enum": ["project", "bug", "discussion", "repair", "update"]},
+                        "title": {"type": "string", "minLength": 2, "maxLength": 100},
+                        "summary": {"type": "string", "minLength": 2, "maxLength": 500},
+                        "content": {
+                            "type": "string",
+                            "description": "Create: 10–12000 characters; reply: 1–4000.",
+                        },
+                        "projectUrl": {
+                            "type": "string",
+                            "description": "Public HTTPS URL required for project topics.",
+                        },
+                        "sourceType": {"enum": ["", "feedback", "forum", "release", "issue"]},
+                        "sourceId": {"type": "string", "maxLength": 160},
+                        "growthId": {"type": "string", "maxLength": 100},
+                        "expectedRevision": {"type": "integer", "minimum": 1},
+                        "state": {
+                            "enum": ["open", "triaged", "in_progress", "resolved", "dismissed"]
+                        },
+                        "note": {"type": "string", "minLength": 2, "maxLength": 2000},
+                    },
+                    ("requestId", "publication", "confirmed"),
+                ),
+            },
             ("session_id", "action", "topic", "payload"),
         ),
     ),
@@ -806,6 +841,7 @@ def cli_body_file(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=os.environ.get("AIEYRA_AGENT_CONFIG"))
+    parser.add_argument("--station", help="Resolve an existing private profile by its local alias")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("mcp")
     sub.add_parser("info")
@@ -857,6 +893,14 @@ def main():
     p.add_argument("id")
     args = parser.parse_args()
     try:
+        if args.station:
+            if args.config or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", args.station):
+                raise ClientError("invalid_station_alias")
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "service"))
+            from paths import data_root
+
+            profile = data_root() / "agents/stations" / (args.station + ".json")
+            args.config = Path(json.loads(profile.read_text(encoding="utf-8-sig"))["config_file"])
         if not args.config:
             raise ClientError("pass_config_or_AIEYRA_AGENT_CONFIG")
         client = AgentClient(json.loads(Path(args.config).read_text(encoding="utf-8-sig")))

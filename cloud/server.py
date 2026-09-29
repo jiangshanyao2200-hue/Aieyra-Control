@@ -38,8 +38,9 @@ SOURCE_REPOSITORY = "https://github.com/jiangshanyao2200-hue/Aieyra-Control"
 
 
 class Error(Exception):
-    def __init__(self, code, status=400):
+    def __init__(self, code, status=400, headers=None):
         self.code, self.status = code, status
+        self.headers = headers or {}
 
 
 def digest(value):
@@ -82,6 +83,8 @@ class Cloud(FeedbackStore, MatrixStore):
         self.rate_lock = threading.Lock()
         self.rate_buckets = {}
         self.connection_counts = {}
+        self.static_lock = threading.Lock()
+        self.static_files = {}
         self.trusted_proxies = {
             v.strip() for v in os.environ.get("CONTROL_TRUSTED_PROXIES", "").split(",") if v.strip()
         }
@@ -101,6 +104,19 @@ class Cloud(FeedbackStore, MatrixStore):
                 if len(self.rate_buckets) >= 8192:
                     raise Error("rate_capacity", 503)
             self.rate_buckets[key] = (now, 1)
+
+    def static_file(self, file):
+        # The finite route allowlist bounds this cache. Revalidate after local edits.
+        stat = file.stat()
+        identity = (stat.st_mtime_ns, stat.st_size)
+        with self.static_lock:
+            saved = self.static_files.get(file)
+            if saved and saved[0] == identity:
+                return saved[1], saved[2]
+            raw = file.read_bytes()
+            etag = '"' + hashlib.sha256(raw).hexdigest() + '"'
+            self.static_files[file] = (identity, raw, etag)
+            return raw, etag
 
     @contextmanager
     def capacity(self, kind, subject, per_user, total):
@@ -358,47 +374,7 @@ class Cloud(FeedbackStore, MatrixStore):
         }
 
     def post(self, session, b):
-        if session["scope"] != "desktop":
-            raise Error("agent_client_required", 403)
-        if (
-            set(b) != {"request_id", "agent", "body", "public_consent"}
-            or b["public_consent"] is not True
-        ):
-            raise Error("explicit_public_consent_required")
-        rid = check(b["request_id"], r"[A-Za-z0-9_.:-]{1,100}")
-        if not isinstance(b["body"], str) or not b["body"].strip() or len(b["body"]) > 1000:
-            raise Error("public_text_limit")
-        if not isinstance(b["agent"], str) or not 1 <= len(b["agent"]) <= 80:
-            raise Error("invalid_agent")
-        # Defence in depth. Explicit selection remains required; this is not a DLP claim.
-        if re.search(
-            r"(?i)(-----BEGIN .*PRIVATE KEY|\bsk-[A-Za-z0-9_-]{16}|(?:password|api_key|access_token)\s*[:=]|[A-Z]:[\\/]|/Users/|/home/)",
-            b["body"],
-        ):
-            raise Error("private_content_detected")
-        hashed = digest(json.dumps(b, sort_keys=True, ensure_ascii=False))
-        subject = session["subject"]
-        with self.db() as d:
-            d.execute("BEGIN IMMEDIATE")
-            old = d.execute(
-                "SELECT * FROM requests WHERE subject=? AND id=?", (subject, rid)
-            ).fetchone()
-            if old:
-                if old["digest"] != hashed:
-                    raise Error("request_conflict", 409)
-                return {"seq": old["seq"], "replayed": True}
-            recent = d.execute(
-                "SELECT COUNT(*) FROM posts WHERE subject=? AND created>?",
-                (subject, time.time() - 60),
-            ).fetchone()[0]
-            if recent >= 6:
-                raise Error("posting_too_fast", 429)
-            row = d.execute(
-                "INSERT INTO posts(subject,agent,body,created) VALUES(?,?,?,?)",
-                (subject, b["agent"], b["body"].strip(), time.time()),
-            )
-            d.execute("INSERT INTO requests VALUES(?,?,?,?)", (subject, rid, hashed, row.lastrowid))
-            return {"seq": row.lastrowid, "replayed": False}
+        raise Error("community_write_retired_use_matrix", 410)
 
     def newapi_identity(self, raw_cookie):
         cookies = SimpleCookie()
@@ -489,6 +465,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise Error("invalid_proxy_identity", 400) from None
         return peer
 
+    def matches_etag(self, etag):
+        return any(
+            candidate.strip().removeprefix("W/") in (etag, "*")
+            for candidate in self.headers.get("If-None-Match", "").split(",")
+        )
+
     def respond(self, status, body=None, headers=None):
         raw = (
             json.dumps(body, ensure_ascii=False).encode()
@@ -506,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
             "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
             "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://ctrlupdate.aieyra.cn; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         }
+        if status in (204, 304):
+            defaults.pop("Content-Length")
         for k, v in {**defaults, **(headers or {})}.items():
             self.send_header(k, v)
         origin = self.headers.get("Origin")
@@ -514,7 +498,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Credentials", "true")
         self.end_headers()
-        if self.command != "HEAD":
+        if self.command != "HEAD" and status not in (204, 304):
             self.wfile.write(raw)
 
     def token(self):
@@ -593,21 +577,21 @@ class Handler(BaseHTTPRequestHandler):
             raise Error("artifact_unavailable", 503)
         size = artifact["size"]
         etag = '"' + artifact["sha256"] + '"'
-        if self.headers.get("If-None-Match") == etag:
-            return self.respond(304, headers={"ETag": etag})
+        if self.matches_etag(etag):
+            return self.respond(304, headers={"ETag": etag, "Cache-Control": "private, no-store"})
         start, end, status = 0, size - 1, 200
         range_header = self.headers.get("Range")
-        if range_header and self.headers.get("If-Range", etag) == etag:
+        if range_header and self.command != "HEAD" and self.headers.get("If-Range", etag) == etag:
             m = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header)
             if not m or not any(m.groups()):
-                raise Error("invalid_range", 416)
+                raise Error("invalid_range", 416, {"Content-Range": f"bytes */{size}"})
             if not m[1]:
                 start = max(0, size - int(m[2]))
             else:
                 start = int(m[1])
                 end = min(size - 1, int(m[2])) if m[2] else size - 1
             if start > end or start >= size:
-                raise Error("invalid_range", 416)
+                raise Error("invalid_range", 416, {"Content-Range": f"bytes */{size}"})
             status = 206
         self.send_response(status)
         headers = {
@@ -723,6 +707,8 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/v1/feedback"):
                 app.ingress_limit("feedback:" + visitor, 60, 60)
             if write:
+                if path == "/v1/community":
+                    raise Error("community_write_retired_use_matrix", 410)
                 if self.headers.get("Origin") not in (None, SITE, CLOUD):
                     raise Error("origin_denied", 403)
                 if (
@@ -773,8 +759,6 @@ class Handler(BaseHTTPRequestHandler):
                             + "=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0"
                         },
                     )
-                if path == "/v1/community":
-                    return self.respond(200, app.post(session, b))
                 raise Error("not_found", 404)
             if path == "/healthz":
                 return self.respond(200, {"service": "aieyra-control-cloud", "version": "0.6.5"})
@@ -827,9 +811,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not target.exists():
                     return self.respond(200, {"available": False})
                 return self.respond(200, target.read_bytes())
+            if path in ("/share", "/share.html"):
+                return self.respond(308, headers={"Location": "/center?type=project"})
             pages = {
                 "/": "index.html",
-                "/share": "share.html",
                 "/download": "download.html",
                 "/auth/callback": "callback.html",
                 "/feedback": "feedback.html",
@@ -838,22 +823,63 @@ class Handler(BaseHTTPRequestHandler):
                 "/feedback.js": "feedback.js",
                 "/style.css": "style.css",
                 "/site.js": "site.js",
+                "/backgrounds.js": "backgrounds.js",
+                "/home-demo.js": "home-demo.js",
+                "/transitions.js": "transitions.js",
+                "/assets/scene-01-clean.webp": "assets/scene-01-clean.webp",
+                "/assets/scene-01-clean-small.webp": "assets/scene-01-clean-small.webp",
+                "/assets/scene-02-clean.webp": "assets/scene-02-clean.webp",
+                "/assets/scene-02-clean-small.webp": "assets/scene-02-clean-small.webp",
+                "/assets/scene-03-clean.webp": "assets/scene-03-clean.webp",
+                "/assets/scene-03-clean-small.webp": "assets/scene-03-clean-small.webp",
+                "/assets/scene-05-clean.webp": "assets/scene-05-clean.webp",
+                "/assets/scene-05-clean-small.webp": "assets/scene-05-clean-small.webp",
+                "/assets/scene-01.webp": "assets/scene-01.webp",
+                "/assets/scene-01-small.webp": "assets/scene-01-small.webp",
+                "/assets/scene-02.webp": "assets/scene-02.webp",
+                "/assets/scene-02-small.webp": "assets/scene-02-small.webp",
+                "/assets/scene-03.webp": "assets/scene-03.webp",
+                "/assets/scene-03-small.webp": "assets/scene-03-small.webp",
+                "/assets/scene-04.webp": "assets/scene-04.webp",
+                "/assets/scene-04-small.webp": "assets/scene-04-small.webp",
+                "/assets/scene-05.webp": "assets/scene-05.webp",
+                "/assets/scene-05-small.webp": "assets/scene-05-small.webp",
+                "/assets/scene-06.webp": "assets/scene-06.webp",
+                "/assets/scene-06-small.webp": "assets/scene-06-small.webp",
+                "/assets/scene-07.webp": "assets/scene-07.webp",
+                "/assets/scene-07-small.webp": "assets/scene-07-small.webp",
+                "/assets/scene-08.webp": "assets/scene-08.webp",
+                "/assets/scene-08-small.webp": "assets/scene-08-small.webp",
+                "/assets/collaboration.webp": "assets/collaboration.webp",
+                "/assets/collaboration-small.webp": "assets/collaboration-small.webp",
             }
             if path in pages:
                 file = Path(__file__).parent / "site" / pages[path]
+                raw, etag = app.static_file(file)
+                headers = {
+                    "ETag": etag,
+                    "Cache-Control": "public, max-age=0, must-revalidate",
+                    "Content-Type": (
+                        "image/webp"
+                        if file.suffix == ".webp"
+                        else mimetypes.guess_type(str(file))[0]
+                    )
+                    + ("; charset=utf-8" if file.suffix in (".html", ".css", ".js") else ""),
+                }
+                if self.matches_etag(etag):
+                    return self.respond(304, headers=headers)
                 return self.respond(
                     200,
-                    file.read_bytes(),
-                    {
-                        "Content-Type": mimetypes.guess_type(str(file))[0]
-                        + ("; charset=utf-8" if file.suffix != ".png" else "")
-                    },
+                    raw,
+                    headers,
                 )
             raise Error("not_found", 404)
         except (Error, FeedbackError) as e:
             self.close_connection = write
             self.respond(
-                e.status, {"error": e.code}, {"Retry-After": "60"} if e.status == 429 else None
+                e.status,
+                {"error": e.code},
+                {**getattr(e, "headers", {}), **({"Retry-After": "60"} if e.status == 429 else {})},
             )
         except (ValueError, TypeError, KeyError):
             self.close_connection = True

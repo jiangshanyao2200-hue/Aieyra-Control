@@ -1153,6 +1153,108 @@ class AgentAccess:
             )
             return result
 
+    def owner_exchange(self, value):
+        """Atomically swap two real native bindings after both owners disconnect."""
+        if set(value) != {"request_id", "bindings", "reason"}:
+            raise AgentError("invalid_station_action")
+        rid, reason = ident(value["request_id"]), text(value["reason"], 1000)
+        pair = value["bindings"]
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise AgentError("invalid_station_exchange")
+        for item in pair:
+            if not isinstance(item, dict) or set(item) != {
+                "actor_id",
+                "native_session_id",
+                "expected_version",
+            }:
+                raise AgentError("invalid_station_exchange")
+            ident(item["actor_id"])
+            ident(item["native_session_id"])
+            if type(item["expected_version"]) is not int or item["expected_version"] < 1:
+                raise AgentError("invalid_station_exchange")
+        actors = [item["actor_id"] for item in pair]
+        natives = [item["native_session_id"] for item in pair]
+        if len(set(actors)) != 2 or len(set(natives)) != 2:
+            raise AgentError("invalid_station_exchange")
+        hashed = digest(canonical(value))
+        with self.lock, self.store.db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.expire(db)
+            old = db.execute(
+                "SELECT * FROM agent_requests WHERE credential_id='local-owner' AND id=?", (rid,)
+            ).fetchone()
+            if old:
+                if old["digest"] != hashed:
+                    raise AgentError("request_id_conflict", 409)
+                return {**json.loads(old["response"]), "replayed": True}
+            before = []
+            for item in pair:
+                row = db.execute(
+                    "SELECT b.* FROM agent_station_bindings b JOIN agent_credentials c ON c.actor_id=b.actor_id WHERE b.actor_id=? AND c.revoked=0",
+                    (item["actor_id"],),
+                ).fetchone()
+                if not row:
+                    raise AgentError("station_binding_missing", 404)
+                if row["version"] != item["expected_version"]:
+                    raise AgentError("station_binding_version_conflict", 409)
+                if db.execute(
+                    "SELECT 1 FROM agent_sessions WHERE actor_id=? AND state='connected'",
+                    (item["actor_id"],),
+                ).fetchone():
+                    raise AgentError("disconnect_before_native_handoff", 409)
+                before.append(dict(row))
+            if natives != [before[1]["native_session_id"], before[0]["native_session_id"]]:
+                raise AgentError("station_exchange_requires_exact_swap", 409)
+            if db.execute(
+                "SELECT 1 FROM agent_station_bindings WHERE native_session_id IN (?,?) AND actor_id NOT IN (?,?)",
+                (*natives, *actors),
+            ).fetchone():
+                raise AgentError("native_session_already_assigned", 409)
+            now = time.time()
+            for item in pair:
+                db.execute(
+                    "UPDATE agent_station_bindings SET native_session_id=?,version=version+1,updated=? WHERE actor_id=? AND version=?",
+                    (item["native_session_id"], now, item["actor_id"], item["expected_version"]),
+                )
+            result = {
+                "station_bindings": [
+                    dict(
+                        db.execute(
+                            "SELECT * FROM agent_station_bindings WHERE actor_id=?", (actor,)
+                        ).fetchone()
+                    )
+                    for actor in actors
+                ]
+            }
+            for actor in actors:
+                db.execute(
+                    "INSERT INTO agent_station_audit(actor_id,action,document,created) VALUES(?,?,?,?)",
+                    (
+                        actor,
+                        "owner_exchange",
+                        canonical(
+                            {
+                                "request_id": rid,
+                                "authority": "local_owner_csrf",
+                                "reason": reason,
+                                "before": before,
+                                "result": result,
+                            }
+                        ),
+                        now,
+                    ),
+                )
+            self.record(
+                db,
+                {"id": "local-owner"},
+                rid,
+                hashed,
+                result,
+                "station.owner_exchange",
+                ",".join(actors),
+            )
+            return result
+
     def save_memory(self, peer, value):
         if value.get("project") != peer["project"]:
             raise AgentError("memory_project_denied", 403)
@@ -1202,17 +1304,7 @@ class AgentAccess:
 
             return self.app.feedback.enqueue(peer, value, VERSION)
         if action == "share":
-            if set(value) != {"request_id", "session_id", "body", "public_consent"}:
-                raise AgentError("invalid_public_share_fields")
-            return self.app.cloud.call(
-                "/v1/community",
-                {
-                    "request_id": ident(value["request_id"]),
-                    "agent": peer["name"],
-                    "body": value["body"],
-                    "public_consent": value["public_consent"],
-                },
-            )
+            raise AgentError("community_write_retired_use_matrix", 410)
         if action == "check":
             return self.app.cloud.check()
         raise AgentError("cloud_action_not_supported", 404)

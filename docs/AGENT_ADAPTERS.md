@@ -25,7 +25,7 @@ python scripts/agent-station.py --profile C:/private/worker.json notification --
 
 The UTF-8 body is limited to 2000 characters. Retry the same request ID and exact body after a lost response. The service chooses the active appointed leader for the sender's project. If several leaders apply, supply `--leader-actor-id`; callers cannot choose an arbitrary native thread. A changed-native `join` also submits this notification automatically after its explicit handoff notice. It never performs the handoff itself.
 
-Native wakeup is an explicit local installation setting in `data/config/control.json`:
+Native wakeup is an explicit local installation setting in `config/control.json` under the configured external data root:
 
 ```json
 {"leader_wakeup":{"enabled":true,"actors":["ENROLLED_LEADER_ACTOR"],"executable":"C:/absolute/path/to/codex.exe"}}
@@ -157,7 +157,7 @@ This grants office communication membership. Runtime observation and production 
 
 `service/os_sessions.py` accepts only explicit registration tied to executable, PID, session, creation time and config digest. `service/product_bridge/` performs authenticated discovery; `service/collaboration.py` intersects advertised runtime actions with local policy. A runtime registration is separate from a development-agent's long-lived office membership. Missing registration must remain unavailable; it is not repaired by scraping user sessions or launching a model.
 
-The standalone installation keeps data under its installation directory; an OS registration written to a different local data directory is not automatically discovered there. The local operator must first verify the running service's `--data-dir`, the intended registration and policy, and the live runtime identity. An existing `collaboration_sources` entry can reference that exact `source.json` and `bridge.json` using absolute paths plus `registration_sha256` and `config_sha256`, with the installation's own `service/product_bridge` adapter. This does not require enabling automatic directory discovery. Preserve unrelated configuration and reload the owned service after backup, then verify `os-doctor` and `/api/collaboration`. A new runtime identity or changed policy requires fresh validation; never repoint a pinned entry merely to revive old work.
+The standalone installation keeps private data outside its software directory; an OS registration written to a different local data directory is not automatically discovered there. The local operator must first verify the running service's `--data-dir`, the intended registration and policy, and the live runtime identity. An existing `collaboration_sources` entry can reference that exact `source.json` and `bridge.json` using absolute paths plus `registration_sha256` and `config_sha256`, with the installation's own `service/product_bridge` adapter. This does not require enabling automatic directory discovery. Preserve unrelated configuration and reload the owned service after backup, then verify `os-doctor` and `/api/collaboration`. A new runtime identity or changed policy requires fresh validation; never repoint a pinned entry merely to revive old work.
 
 Read `/api/collaboration` on local Control for the current observation. `available=false`, `stale=true` or no matrices means no currently verified runtime bridge. This does not mean the OS product-maintenance agent is absent. Production send/cancel is tested only when the product owner supplies a current registered runtime and the user's existing execution scope permits it. Generation checks, independent delivery evidence and acceptance remain mandatory.
 
@@ -174,3 +174,7 @@ Contract snapshots were checked on 2026-09-27 against the official sources below
 - Codex: `https://developers.openai.com/codex/guides/agents-md` and `https://developers.openai.com/codex/mcp` (official documentation redirects to learn.chatgpt.com).
 
 Use each host's installed-version behavior when it differs from the current documentation. Adapter contract tests, native host config recognition and actual model-driven use must be reported separately.
+
+## Explicit exchange of two project stations
+
+The loopback local-owner endpoint `POST /api/agent-access/exchange` atomically exchanges two existing real native bindings. The owner supplies the same-origin CSRF header, a stable `request_id`, a `reason`, and exactly two `bindings`, each with `actor_id`, the other station's current `native_session_id`, and its own `expected_version`. Both stations must disconnect first. Both versions and the exact swap are checked before either binding changes. The transaction increments both versions and retains per-actor audits and an idempotent receipt. Conflicts change neither station. This grants no leadership, transfers no credentials, and replays no tasks. Each project resumes using its own profile and the assigned real native ID.

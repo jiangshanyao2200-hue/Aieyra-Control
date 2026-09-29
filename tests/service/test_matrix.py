@@ -100,6 +100,114 @@ class MatrixHTTPTests(unittest.TestCase):
         session["matrix_private_key"] = keys["privateKey"]
         return session
 
+    def test_capabilities_match_enforced_operation_limits(self):
+        status, capabilities = self.request("/v1/matrix/capabilities")
+        self.assertEqual(status, 200)
+        self.assertTrue(capabilities["browserReadOnly"])
+        self.assertEqual(
+            capabilities["limits"]["replyContent"], {"minLength": 1, "maxLength": 4000}
+        )
+        self.assertEqual(
+            capabilities["limits"]["topicContent"], {"minLength": 10, "maxLength": 12000}
+        )
+        self.assertEqual(set(capabilities["operations"]), {"create", "reply", "state", "withdraw"})
+        self.assertTrue(capabilities["retry"]["sameRequestIdAndPayload"])
+
+    def test_public_boards_filter_before_pagination_and_hide_account_names(self):
+        created = []
+        with patch.dict("os.environ", {"CONTROL_MATRIX_ADMINS": "fixture"}):
+            for i, kind in enumerate(["bug", "repair", "discussion", "project", "update"]):
+                payload = {**topic("board-" + str(i)), "type": kind}
+                if kind == "project":
+                    payload["projectUrl"] = "https://example.com/project"
+                code, value = self.request("/v1/matrix/topics", payload, self.session)
+                self.assertEqual(code, 200, value)
+                created.append(value["item"])
+        for board, expected in [
+            ("releases", {"update"}),
+            ("feedback", {"bug", "repair"}),
+            ("lounge", {"discussion", "project"}),
+        ]:
+            code, value = self.request("/v1/matrix/topics?board=" + board)
+            self.assertEqual(code, 200)
+            self.assertEqual({item["type"] for item in value["items"]}, expected)
+            self.assertTrue(all(item["board"] == board for item in value["items"]))
+        self.assertEqual(
+            self.request("/v1/matrix/topics?board=feedback&type=project")[1]["items"], []
+        )
+        self.assertEqual(self.request("/v1/matrix/topics?board=unknown")[0], 400)
+        alias = created[0]["author"]
+        self.assertTrue(alias["name"].startswith("Agent · "))
+        self.assertNotIn("Fixture", json.dumps(created))
+        self.assertEqual(alias, created[-2]["author"])
+        self.assertEqual(created[-1]["author"]["name"], "Aieyra Control")
+        reply = {
+            "requestId": "alias-reply",
+            "content": "Reviewed public reply",
+            "publication": "public",
+            "confirmed": True,
+        }
+        self.assertEqual(
+            self.request("/v1/matrix/topics/" + created[0]["id"] + "/replies", reply, self.session)[
+                0
+            ],
+            200,
+        )
+        replies = self.request("/v1/matrix/topics/" + created[0]["id"] + "/replies")[1]["items"]
+        self.assertEqual(replies[0]["author"], alias)
+        with self.app.db() as db:
+            db.execute("UPDATE matrix_topics SET author='Private account name'")
+            db.execute("UPDATE matrix_replies SET author='Private account name'")
+        self.app.init_matrix()
+        self.assertNotIn("Private account name", json.dumps(self.request("/v1/matrix/topics")[1]))
+        self.assertNotIn(
+            "Private account name",
+            json.dumps(self.request("/v1/matrix/topics/" + created[0]["id"] + "/replies")[1]),
+        )
+
+    def test_board_pagination_has_no_mixed_or_skipped_types(self):
+        for i in range(23):
+            payload = {**topic("page-board-" + str(i)), "type": "bug" if i < 21 else "discussion"}
+            self.assertEqual(self.request("/v1/matrix/topics", payload, self.session)[0], 200)
+        first = self.request("/v1/matrix/topics?board=feedback")[1]
+        self.assertEqual(len(first["items"]), 20)
+        second = self.request(
+            "/v1/matrix/topics?board=feedback&before=" + str(first["nextCursor"])
+        )[1]
+        self.assertEqual(len(second["items"]), 1)
+        self.assertIsNone(second["nextCursor"])
+        self.assertEqual(len({x["id"] for x in first["items"] + second["items"]}), 21)
+
+    def test_webp_static_mime_and_share_redirect(self):
+        for asset in (
+            "collaboration.webp",
+            "collaboration-small.webp",
+            "scene-01-clean.webp",
+            "scene-01-clean-small.webp",
+            "scene-02-clean.webp",
+            "scene-02-clean-small.webp",
+            "scene-03-clean.webp",
+            "scene-03-clean-small.webp",
+            "scene-05-clean.webp",
+            "scene-05-clean-small.webp",
+            *(
+                f"scene-{number:02d}{suffix}.webp"
+                for number in range(1, 9)
+                for suffix in ("", "-small")
+            ),
+        ):
+            with self.opener.open(self.base + "/assets/" + asset) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers["Content-Type"], "image/webp")
+                self.assertEqual(response.read(4), b"RIFF")
+        for script in ("backgrounds.js", "home-demo.js", "transitions.js"):
+            with self.opener.open(self.base + "/" + script) as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn("javascript", response.headers["Content-Type"])
+        with self.opener.open(self.base + "/share") as response:
+            self.assertTrue(response.url.endswith("/center?type=project"))
+            self.assertIn("论坛板块", response.read().decode("utf-8"))
+
     def test_proof_body_path_session_and_replay_are_bound(self):
         p = topic()
         path = "/v1/matrix/topics"
@@ -429,6 +537,19 @@ class MatrixNativeIntegrationTests(unittest.TestCase):
         first = self.tool("matrix_publish", **args)
         self.assertEqual(first["state"], "received")
         tid = first["receipt"]["item"]["id"]
+        filtered = self.tool("matrix_read", session_id=sid, view="topics", board="feedback")
+        self.assertEqual([item["id"] for item in filtered["items"]], [tid])
+        self.assertEqual(
+            self.tool("matrix_read", session_id=sid, view="topics", board="lounge")["items"], []
+        )
+        with self.assertRaises(agent_fixture.client_module.ClientError):
+            self.tool("matrix_read", session_id=sid, view="topics", board="invalid")
+        with patch.object(self.agent.app.cloud, "call") as outbound:
+            with self.assertRaises(agent_fixture.client_module.ClientError) as retired:
+                self.agent.client.call("cloud/share", {"session_id": sid})
+            self.assertEqual(retired.exception.status, 410)
+            self.assertEqual(retired.exception.code, "community_write_retired_use_matrix")
+            outbound.assert_not_called()
         self.assertTrue(self.tool("matrix_publish", **args)["replayed"])
         events = self.tool("matrix_sync", session_id=sid)
         self.assertEqual(len(events["events"]), 1)

@@ -70,6 +70,54 @@ class DistributionTests(CloudTests):
         headers["If-None-Match"] = '"' + "a" * 64 + '"'
         self.assertEqual(self.request(self.path, headers)[0], 401)
 
+    def test_range_errors_suffix_if_range_and_head(self):
+        auth = {"Authorization": "Bearer " + self.token()}
+        for value in ("bytes=10-", "bytes=8-2", "bytes=-0", "bytes=0-1,4-5"):
+            with self.subTest(value=value):
+                status, headers, _ = self.request(self.path, {**auth, "Range": value})
+                self.assertEqual(status, 416)
+                self.assertEqual(headers["Content-Range"], "bytes */10")
+        status, headers, raw = self.request(self.path, {**auth, "Range": "bytes=-3"})
+        self.assertEqual((status, raw, headers["Content-Range"]), (206, b"890", "bytes 7-9/10"))
+        status, _, raw = self.request(
+            self.path, {**auth, "Range": "bytes=2-4", "If-Range": '"old"'}
+        )
+        self.assertEqual((status, raw), (200, b"1234567890"))
+        status, headers, raw = self.request(
+            self.path, {**auth, "Range": "bytes=2-4"}, method="HEAD"
+        )
+        self.assertEqual((status, raw, headers["Content-Length"]), (200, b"", "10"))
+
+    def test_static_conditional_cache_and_head_keep_security_headers(self):
+        for path in (
+            "/",
+            "/center",
+            "/style.css",
+            "/transitions.js",
+            "/assets/scene-03-clean.webp",
+        ):
+            with self.subTest(path=path):
+                status, headers, raw = self.request(path)
+                self.assertEqual(status, 200)
+                self.assertGreater(len(raw), 0)
+                self.assertEqual(headers["Cache-Control"], "public, max-age=0, must-revalidate")
+                etag = headers["ETag"]
+                for condition in (etag, "W/" + etag, '"old", ' + etag, "*"):
+                    status, cached, body = self.request(path, {"If-None-Match": condition})
+                    self.assertEqual((status, body), (304, b""))
+                    self.assertEqual(cached["ETag"], etag)
+                    self.assertEqual(cached["X-Content-Type-Options"], "nosniff")
+                    self.assertNotIn("Content-Length", cached)
+                status, head, body = self.request(path, method="HEAD")
+                self.assertEqual((status, body), (200, b""))
+                self.assertEqual(head["Content-Length"], str(len(raw)))
+
+    def test_legacy_public_write_returns_gone_before_auth_or_database(self):
+        status, _, raw = self.request("/v1/community", body={}, method="POST")
+        self.assertEqual(status, 410)
+        self.assertEqual(json.loads(raw)["error"], "community_write_retired_use_matrix")
+        self.assertEqual(self.app.feed()["posts"], [])
+
     def test_browser_cookie_is_httponly_token_not_returned_and_csrf_rejected(self):
         status, h, raw = self.request(
             "/v1/auth/exchange",

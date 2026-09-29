@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy a stopped legacy installation into portable storage, preserving the original."""
+"""Copy a stopped legacy installation into external storage, preserving the original."""
 
 import argparse
 import json
@@ -12,11 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "service"))
 from main import InstanceLock
+from paths import data_root, external_path
 
 
 def migrate(source, destination, config=None, desktop=None):
     source = source.resolve()
-    destination = destination.resolve()
+    destination = external_path(destination)
     if not source.is_dir() or source == destination or source in destination.parents:
         raise ValueError("invalid_migration_paths")
     lock = InstanceLock(source)
@@ -80,8 +81,8 @@ def migrate(source, destination, config=None, desktop=None):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--from", dest="source", type=Path, required=True)
-    p.add_argument("--to", dest="target", type=Path, default=ROOT / "data")
+    p.add_argument("--to", dest="target", type=Path)
     p.add_argument("--config", type=Path)
     p.add_argument("--desktop", type=Path)
     a = p.parse_args()
-    print(json.dumps(migrate(a.source, a.target, a.config, a.desktop), indent=2))
+    print(json.dumps(migrate(a.source, a.target or data_root(), a.config, a.desktop), indent=2))

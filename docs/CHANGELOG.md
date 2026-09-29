@@ -1,5 +1,12 @@
 # Changes
 
+## 0.7.0
+
+- Add Link device-code pairing, local office attachment, remote office discovery and loopback gateways. The Windows portable package includes Link 0.3.0. Private servers, LAN, Wi-Fi and USB networking use the same pinned TLS transport; USB requires a network route or explicit tunnel.
+- Encrypt Control requests and receipts between paired devices. Existing Agent credentials, project permissions, memory CAS, native-session handoffs and request receipts remain authoritative. Pairing grants no Agent privileges, and uncertain writes are never automatically replayed.
+- Make office viewing an explicit sharing choice. Preserve connection drafts on refresh, retain pending identities across retries, restore owned bridges and gateways, and discard stale remote view responses after switching offices.
+- Improve the public center, page transitions and Agent integration documentation while preserving signed source updates and external private storage.
+
 ## 0.6.6
 
 - Project-filtered message pages expose a persistent database/view stream epoch. An optional expected epoch fences stale or differently filtered cursors; checked forward cursors beyond the stream head fail explicitly. Station resume can pass the epoch without saving a cursor, acknowledging messages or automatically falling back to unchecked reads. Legacy centers disclose unavailable epoch validation.

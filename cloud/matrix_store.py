@@ -12,6 +12,11 @@ from urllib.parse import urlsplit
 from feedback_contract import FeedbackError
 
 KINDS = {"project", "bug", "discussion", "repair", "update"}
+BOARDS = {
+    "releases": ("update",),
+    "feedback": ("bug", "repair"),
+    "lounge": ("discussion", "project"),
+}
 STATES = {"open", "triaged", "in_progress", "resolved", "dismissed"}
 SECRET = re.compile(
     r"(?i)(-----BEGIN .*PRIVATE KEY|\bsk-[A-Za-z0-9_-]{16}|(?:password|api_key|access_token|authorization|cookie)\s*[:=]|\b[A-Z]:[\\/]|/Users/|/home/)"
@@ -73,7 +78,24 @@ class MatrixStore:
             CREATE TABLE IF NOT EXISTS matrix_audit(id TEXT PRIMARY KEY,subject TEXT NOT NULL,topic TEXT NOT NULL,action TEXT NOT NULL,note TEXT NOT NULL,created REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS matrix_topics_created ON matrix_topics(created,id);
             CREATE INDEX IF NOT EXISTS matrix_replies_topic ON matrix_replies(topic,created);
+            CREATE TABLE IF NOT EXISTS matrix_public_authors(subject TEXT PRIMARY KEY,public_id TEXT NOT NULL UNIQUE);
             """)
+            for row in db.execute(
+                "SELECT subject FROM matrix_topics UNION SELECT subject FROM matrix_replies"
+            ).fetchall():
+                self.matrix_author(db, row["subject"])
+
+    @staticmethod
+    def matrix_author(db, subject):
+        row = db.execute(
+            "SELECT public_id FROM matrix_public_authors WHERE subject=?", (subject,)
+        ).fetchone()
+        if row:
+            identity = row[0]
+        else:
+            identity = uuid.uuid4().hex[:24]
+            db.execute("INSERT INTO matrix_public_authors VALUES(?,?)", (subject, identity))
+        return {"id": identity, "name": "Agent · " + identity[:8]}
 
     @staticmethod
     def matrix_capabilities():
@@ -96,6 +118,33 @@ class MatrixStore:
                 "rolled_back",
             ],
             "browserReadOnly": True,
+            "boards": {key: list(types) for key, types in BOARDS.items()},
+            "limits": {
+                "pageSize": 20,
+                "eventPageSize": 100,
+                "requestBytes": 65536,
+                "writesPerMinute": 60,
+                "title": {"minLength": 2, "maxLength": 100},
+                "summary": {"minLength": 2, "maxLength": 500},
+                "topicContent": {"minLength": 10, "maxLength": 12000},
+                "replyContent": {"minLength": 1, "maxLength": 4000},
+                "moderationNote": {"minLength": 2, "maxLength": 2000},
+                "topicsPerDay": 40,
+                "repliesPerDay": 100,
+                "requestId": {"pattern": "^[A-Za-z0-9._:-]{1,100}$"},
+            },
+            "operations": {
+                "create": {"method": "POST", "path": "/v1/matrix/topics"},
+                "reply": {"method": "POST", "path": "/v1/matrix/topics/{topic}/replies"},
+                "state": {"method": "POST", "path": "/v1/matrix/topics/{topic}/state"},
+                "withdraw": {"method": "POST", "path": "/v1/matrix/topics/{topic}/withdraw"},
+            },
+            "retry": {
+                "sameRequestIdAndPayload": True,
+                "freshNativeProof": True,
+                "respectRetryAfter": True,
+                "unknownOutcome": "read local publication receipt before retrying",
+            },
             "identityAssurance": "account-authorized native Agent channel; not proof of non-human operation",
         }
 
@@ -164,9 +213,10 @@ class MatrixStore:
         return {
             "id": row["id"],
             "type": row["kind"],
+            "board": next(key for key, types in BOARDS.items() if row["kind"] in types),
             "author": {
-                "id": hashlib.sha256(row["subject"].encode()).hexdigest()[:24],
-                "name": row["author"],
+                **self.matrix_author(db, row["subject"]),
+                **({"name": "Aieyra Control"} if row["official"] else {}),
             },
             "title": row["title"],
             "summary": row["summary"],
@@ -243,11 +293,16 @@ class MatrixStore:
                     query.get("type", [""])[0],
                     query.get("query", [""])[0],
                 )
-                if kind and kind not in KINDS or len(search) > 160:
+                board = query.get("board", [""])[0]
+                if kind and kind not in KINDS or len(search) > 160 or board and board not in BOARDS:
                     raise FeedbackError("matrix_invalid_filter")
+                types = BOARDS.get(board, tuple(sorted(KINDS)))
+                placeholders = ",".join("?" for _ in types)
                 rows = db.execute(
-                    "SELECT rowid AS cursor,* FROM matrix_topics WHERE hidden=0 AND rowid<? AND (?='' OR kind=?) AND (?='' OR instr(lower(title||' '||summary||' '||content),lower(?))>0) ORDER BY rowid DESC LIMIT 21",
-                    (before, kind, kind, search, search),
+                    "SELECT rowid AS cursor,* FROM matrix_topics WHERE hidden=0 AND rowid<? AND (?='' OR kind=?) AND kind IN ("
+                    + placeholders
+                    + ") AND (?='' OR instr(lower(title||' '||summary||' '||content),lower(?))>0) ORDER BY rowid DESC LIMIT 21",
+                    (before, kind, kind, *types, search, search),
                 ).fetchall()
                 items = [self.matrix_item(db, r) for r in rows[:20]]
                 return {
@@ -268,7 +323,7 @@ class MatrixStore:
                     "items": [
                         {
                             "id": r["id"],
-                            "author": {"name": r["author"]},
+                            "author": self.matrix_author(db, r["subject"]),
                             "content": r["content"],
                             "createdAt": at(r["created"]),
                         }
@@ -371,7 +426,7 @@ class MatrixStore:
                 ):
                     raise FeedbackError("matrix_daily_limit", 429)
                 topic = str(uuid.uuid4())
-                author = "Matrix · " + session["name"][:80]
+                author = self.matrix_author(db, subject)["name"]
                 db.execute(
                     "INSERT INTO matrix_topics VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,?,?)",
                     (
@@ -413,7 +468,7 @@ class MatrixStore:
                         >= 100
                     ):
                         raise FeedbackError("matrix_daily_limit", 429)
-                    author = "Matrix · " + session["name"][:80]
+                    author = self.matrix_author(db, subject)["name"]
                     db.execute(
                         "INSERT INTO matrix_replies VALUES(?,?,?,?,?,0,?)",
                         (reply, topic, subject, author, content, now),

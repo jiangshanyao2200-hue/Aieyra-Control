@@ -214,6 +214,90 @@ server.serve_forever()
             operation()
         self.assertEqual(caught.exception.code, code)
 
+    def test_owner_exchange_requires_two_cas_and_disconnect_then_replays_exactly(self):
+        self.connect(native_session_id="native-first")
+        token = secrets.token_urlsafe(32)
+        second = self.owner(
+            "/api/agent-access/enroll",
+            {
+                **self.enrollment,
+                "request_id": "second-worker",
+                "token": token,
+            },
+        )
+        client = client_module.AgentClient({"url": self.server.origin, "token": token})
+        seat = client.call("seats")["seats"][0]
+        client.call(
+            "connect",
+            {
+                "request_id": "connect-second",
+                "session_id": "second-session",
+                "seat_id": seat["id"],
+                "seat_epoch": seat["epoch"],
+                "native_session_id": "native-second",
+            },
+        )
+        first_actor = self.enrolled["credential"]["actor_id"]
+        second_actor = second["credential"]["actor_id"]
+        body = {
+            "request_id": "exchange-fixture",
+            "reason": "Explicit project reassignment",
+            "bindings": [
+                {
+                    "actor_id": first_actor,
+                    "native_session_id": "native-second",
+                    "expected_version": 2,
+                },
+                {
+                    "actor_id": second_actor,
+                    "native_session_id": "native-first",
+                    "expected_version": 2,
+                },
+            ],
+        }
+        route = "/api/agent-access/exchange"
+        with self.assertRaises(HTTPError) as error:
+            self.owner(route, body)
+        self.assertEqual(error.exception.code, 409)
+        self.client.call("disconnect", {"request_id": "disconnect-first", "session_id": self.sid})
+        client.call(
+            "disconnect", {"request_id": "disconnect-second", "session_id": "second-session"}
+        )
+        wrong = json.loads(json.dumps(body))
+        wrong["bindings"][1]["expected_version"] = 1
+        with self.assertRaises(HTTPError) as error:
+            self.owner(route, wrong)
+        self.assertEqual(error.exception.code, 409)
+        with self.app.store.db() as db:
+            rows = db.execute(
+                "SELECT native_session_id,version FROM agent_station_bindings ORDER BY native_session_id"
+            ).fetchall()
+            self.assertEqual(
+                [tuple(row) for row in rows], [("native-first", 2), ("native-second", 2)]
+            )
+        with self.assertRaises(HTTPError) as error:
+            self.owner(route, body, {"X-Control-CSRF": "invalid"})
+        self.assertEqual(error.exception.code, 403)
+        result = self.owner(route, body)
+        self.assertEqual(
+            [r["native_session_id"] for r in result["station_bindings"]],
+            ["native-second", "native-first"],
+        )
+        self.assertEqual([r["version"] for r in result["station_bindings"]], [3, 3])
+        replay = self.owner(route, body)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(result["station_bindings"], replay["station_bindings"])
+        with self.assertRaises(HTTPError) as error:
+            self.owner(route, {**body, "reason": "different"})
+        self.assertEqual(error.exception.code, 409)
+        with self.app.store.db() as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT count(*) FROM agent_station_audit WHERE action='owner_exchange'"
+                ).fetchone()[0],
+                2,
+            )
+
     def test_full_registration_delivery_result_disconnect_and_center_task_loop(self):
         delivery = self.deliver()
         self.receipt(delivery, "received")
@@ -693,6 +777,19 @@ server.serve_forever()
         contract = self.owner("/api/agent-openapi")
         self.assertEqual(contract["openapi"], "3.1.0")
         self.assertIn("/api/agent/v1/center/task-update", contract["paths"])
+        self.assertNotIn("/api/agent/v1/cloud/share", contract["paths"])
+        read = contract["paths"]["/api/agent/v1/cloud/matrix-read"]["post"]["requestBody"][
+            "content"
+        ]["application/json"]["schema"]
+        self.assertEqual(read["properties"]["board"]["enum"], ["releases", "feedback", "lounge"])
+        publish = contract["paths"]["/api/agent/v1/cloud/matrix-publish"]["post"]["requestBody"][
+            "content"
+        ]["application/json"]["schema"]
+        self.assertEqual(publish["properties"]["topic"]["type"], "string")
+        self.assertNotIn("minLength", publish["properties"]["topic"])
+        self.assertEqual(
+            publish["properties"]["payload"]["properties"]["confirmed"], {"const": True}
+        )
         self.assertGreater(len(contract["paths"]), 60)
 
     def test_lost_enrollment_response_and_partial_center_steps_resume(self):

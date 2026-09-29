@@ -5,8 +5,12 @@ import argparse
 import json
 import os
 import secrets
+import sys
 from pathlib import Path
 from urllib.request import HTTPRedirectHandler, Request, build_opener, ProxyHandler
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "service"))
+from paths import external_path
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -16,7 +20,7 @@ class NoRedirect(HTTPRedirectHandler):
 
 def save_new(path, value):
     """Publish complete private JSON without ever replacing an existing file."""
-    path = Path(path)
+    path = external_path(Path(path).absolute())
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + secrets.token_hex(16) + ".tmp")
     fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -33,7 +37,7 @@ def save_new(path, value):
 
 def enroll(name, project, output, *, port=17910, request_id=None, resume=False):
     """Persist a private intent before enrollment; retry only its original payload."""
-    output = Path(output)
+    output = external_path(Path(output).absolute())
     origin = "http://127.0.0.1:" + str(port)
     opener = build_opener(ProxyHandler({}), NoRedirect())
     if resume:

@@ -150,11 +150,11 @@ def create_station(
         or type(lease) is not bool
     ):
         raise Error("invalid_station_creation")
-    path = Path(profile_path).resolve()
+    path = ENROLL.external_path(Path(profile_path).absolute())
     root = Path(root).resolve()
     if not root.is_dir():
         raise Error("project_root_missing")
-    state_dir = path.parent / (path.stem + ".state")
+    state_dir = ENROLL.external_path(path.parent / (path.stem + ".state"))
     intent_path = state_dir / "create.json"
     config_path = state_dir / "credential.json"
     if path == config_path or path == intent_path or state_dir in path.parents:
@@ -259,7 +259,7 @@ def create_station(
 
 class Station:
     def __init__(self, profile_path):
-        self.path = Path(profile_path).resolve()
+        self.path = ENROLL.external_path(Path(profile_path).absolute())
         self.p = read_json(self.path)
         required = {"schema", "host", "project", "root", "config_file", "actor_id", "seat_id"}
         if (
@@ -279,9 +279,10 @@ class Station:
         self.root = Path(self.p["root"]).resolve()
         if not self.root.is_dir():
             raise Error("project_root_missing")
-        self.state_dir = self.path.parent / (self.path.stem + ".state")
+        self.state_dir = ENROLL.external_path(self.path.parent / (self.path.stem + ".state"))
         self.state_file = self.state_dir / "connection.json"
-        self.client = CLIENT.AgentClient(read_json(self.p["config_file"]))
+        config_path = ENROLL.external_path(self.p["config_file"])
+        self.client = CLIENT.AgentClient(read_json(config_path))
         self.client.timeout = 3
         for key, default, low, high in (
             ("max_seconds", 3600, 30, 14400),
@@ -816,7 +817,10 @@ class Station:
 def configure(station, remove=False):
     """Merge only our entries, preserve unrelated settings, refuse changed ownership."""
     p, root = station.p, station.root
-    key = "aieyra-control-" + hashlib.sha256(str(station.path).encode()).hexdigest()[:12]
+    saved_manifest = station.state_dir / "installation.json"
+    key = (read_json(saved_manifest).get("key") if saved_manifest.exists() else None) or (
+        "aieyra-control-" + hashlib.sha256(str(station.path).encode()).hexdigest()[:12]
+    )
     script = str(Path(__file__).resolve())
     args = ["-X", "utf8", script, "--profile", str(station.path), "hook"]
     mcp = {
@@ -830,6 +834,24 @@ def configure(station, remove=False):
             "mcp",
         ],
     }
+    software_project = root == Path(__file__).resolve().parents[1]
+    if software_project:
+        sys.path.insert(0, str(root / "service"))
+        from paths import data_root
+
+        if station.path.parent != data_root() / "agents/stations":
+            raise Error("software_station_profile_must_use_external_storage")
+        mcp = {
+            "command": "python" if os.name == "nt" else "python3",
+            "args": [
+                "-X",
+                "utf8",
+                "scripts/agent-client.py",
+                "--station",
+                station.path.stem,
+                "mcp",
+            ],
+        }
     contributions = {}
     if p["host"] == "claude":
         # Official exec form avoids shell expansion of paths on every platform.
@@ -901,6 +923,16 @@ def configure(station, remove=False):
     if p["host"] == "claude":
         text_parts["CLAUDE.md"] = (
             "Read and follow the persistent Control station instructions:\n\n@AGENTS.md\n"
+        )
+    if software_project:
+        text_parts["AGENTS.md"] = (
+            "## Private collaboration storage\n\n"
+            "Software and private data use separate directories. Resolve storage.json or "
+            "AIEYRA_CONTROL_DATA as described in README.md. Existing station profiles and "
+            "their state live in that data root under agents/stations. Read the assigned "
+            "profile before connecting, and preserve its actor, seat and native-session "
+            "handoff requirements. Never store credentials, conversation history, private "
+            "project records or machine-specific paths in the software directory.\n"
         )
     if p["host"] == "cursor":
         text_parts[".cursor/rules/" + key + ".mdc"] = (

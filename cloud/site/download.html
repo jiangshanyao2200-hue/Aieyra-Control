@@ -6,11 +6,19 @@
       content="width=device-width,initial-scale=1" /><meta
       name="theme-color"
       content="#10191d" /><title>下载 · Aieyra Control</title
-    ><meta name="description" content="让 Agent 各就其位，让项目持续生长。" /><link
+    ><meta name="description" content="让Agent参与协作，与跨设备协作。" /><link
       rel="stylesheet"
       href="/style.css"
   /></head>
   <body data-page="download"
+    ><div class="page-background" data-backgrounds aria-hidden="true"
+      ><picture class="background-frame is-visible"
+        ><source media="(max-width: 600px)" srcset="/assets/scene-07-small.webp" /><img
+          src="/assets/scene-07.webp"
+          width="1920"
+          height="1080"
+          alt=""
+          fetchpriority="high" /></picture></div
     ><aside class="site-rail"
       ><a class="brand-mark" href="/" aria-label="Aieyra Control"
         ><svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -33,18 +41,6 @@
           >
             <path d="m4 10 8-6 8 6v10H4V10Z M9 20v-7h6v7" /></svg
           ><span>首页</span></a
-        ><a href="/share" aria-label="分享"
-          ><svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 5h16v11H9l-5 4V5Z M8 9h8M8 12h5" /></svg
-          ><span>分享</span></a
         ><a href="/center" aria-label="中心"
           ><svg
             viewBox="0 0 24 24"
@@ -72,53 +68,31 @@
         ></nav
       ><span class="rail-sign" aria-hidden="true">AC</span></aside
     ><main class="download-page"
-      ><div class="download-glow" aria-hidden="true"></div
       ><section class="download-copy"
-        ><span class="eyebrow">YOUR LOCAL OFFICE</span><h1>带回你的桌面。</h1
-        ><p class="download-note">解压即用。默认本地。</p
-        ><div class="release-meta"
-          ><span data-version>Windows · macOS</span><span data-size></span></div
+        ><h1>现在就下载</h1><p class="download-note">体验新时代Agent协作。</p
+        ><div class="release-meta"><span data-version>Windows</span><span data-size></span></div
         ><p class="download-identity" data-identity></p
         ><div class="download-actions" data-downloads></div
         ><p class="download-status" role="status">读取版本…</p
         ><button class="text-action" data-release-retry hidden>重试</button
-        ><details class="release-details" hidden
-          ><summary>校验信息</summary><span>SHA-256</span><code data-hash></code></details></section
-      ><div class="download-art" aria-hidden="true"
-        ><svg viewBox="0 0 300 300" fill="none">
-          <path
-            class="art-halo"
-            d="m150 34 120 68v94L150 266 30 196v-94L150 34Z"
-            stroke="currentColor"
-            stroke-width=".8"
-          />
-          <path
-            d="m64 147 86-49 86 49-86 49-86-49Z"
-            fill="#78988d"
-            fill-opacity=".4"
-            stroke="#91b1a4"
-          />
-          <path d="m64 147 86 49 86-49v13l-86 50-86-50v-13Z" fill="#354d4c" stroke="#718f84" />
-          <path d="M77 169v39m146-39v39" stroke="#42615a" stroke-width="7" />
-          <path
-            d="m108 83 63 36v47l-63-36V83Z"
-            fill="#1b3035"
-            stroke="#839f94"
-            stroke-width="1.4"
-          />
-          <path d="m116 97 46 26v28l-46-26V97Z" fill="#34524d" />
-          <path
-            class="screen-lines"
-            d="m125 113 28 16m-28-8 18 10"
-            stroke="#a1bbae"
-            stroke-width="1.3"
-          />
-          <path d="m150 180 20-12 27 15-21 12-26-15Z" fill="#172b2e" />
-          <path
-            d="m122 215 23-13 31 17-24 14-30-18Z m0 0v19l30 18 24-14v-19"
-            fill="#425e5a"
-            stroke="#6b8b7f"
-          /></svg></div></main
+        ><details class="release-details" data-release-details hidden
+          ><summary>校验信息</summary><span>SHA-256</span><code data-hash></code></details
+        ><details class="release-details" data-link-guide
+          ><summary>用 Link 连接你的设备</summary
+          ><p
+            >Control 0.7 内置 Link。把 Link
+            部署到自己的私人服务器，获取设备码，即可在“连接”中接入多台设备。也支持局域网、Wi-Fi 和
+            USB 网络。</p
+          ><p>无需官方云账号；只读办公室共享由你主动开启。USB 需要网络共享或端口隧道。</p
+          ><a
+            href="https://github.com/jiangshanyao2200-hue/Aieyra-Control/blob/main/docs/LINK.md"
+            target="_blank"
+            rel="noopener"
+            >部署与连接说明</a
+          ></details
+        ></section
+      ></main
     ><script src="/site.js" type="module"></script
+    ><script type="module" src="/backgrounds.js"></script
   ></body>
 </html>

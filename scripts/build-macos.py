@@ -12,6 +12,7 @@ import subprocess
 import tarfile
 import urllib.request
 from pathlib import Path
+from link_runtime import verify_link
 
 ROOT = Path(__file__).resolve().parents[1]
 ELECTRON = "42.6.1"
@@ -36,9 +37,12 @@ def fetch(url, target, sha):
         raise ValueError("runtime_hash_mismatch")
 
 
-def build(output, arch, baseline=None):
+def build(output, arch, baseline=None, link_binary=None, link_sha256=None):
     if platform.system() != "Darwin" or (platform.machine() == "arm64") != (arch == "arm64"):
         raise ValueError("native_mac_runner_required")
+    if bool(link_binary) != bool(link_sha256):
+        raise ValueError("link_binary_and_hash_required_together")
+    link = verify_link(link_binary, link_sha256) if link_binary else None
     spec = importlib.util.spec_from_file_location(
         "source_export", ROOT / "scripts/export-source.py"
     )
@@ -119,6 +123,10 @@ def build(output, arch, baseline=None):
     (stage / "runtime").mkdir()
     with tarfile.open(python) as t:
         t.extractall(stage / "runtime", filter="data")
+    if link:
+        (stage / "runtime/link").mkdir()
+        shutil.copy2(link_binary, stage / "runtime/link/aieyra-link")
+        (stage / "runtime/link/release.json").write_text(json.dumps(link), encoding="utf-8")
     subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     subprocess.run(
@@ -151,6 +159,7 @@ def build(output, arch, baseline=None):
         "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "size": archive.stat().st_size,
         "startup_verified": True,
+        "link": link,
     }
     (output / "build-receipt.json").write_text(json.dumps(receipt, indent=2))
     return receipt
@@ -161,5 +170,7 @@ if __name__ == "__main__":
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--arch", choices=RUNTIMES, required=True)
     p.add_argument("--baseline", type=Path)
+    p.add_argument("--link-binary", type=Path)
+    p.add_argument("--link-sha256")
     a = p.parse_args()
-    print(json.dumps(build(a.output, a.arch, a.baseline), indent=2))
+    print(json.dumps(build(a.output, a.arch, a.baseline, a.link_binary, a.link_sha256), indent=2))

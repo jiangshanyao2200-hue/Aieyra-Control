@@ -87,7 +87,7 @@ class Growth:
         }
 
     def read(self, peer, value):
-        if set(value) - {"session_id", "view", "topic", "before", "type", "query"}:
+        if set(value) - {"session_id", "view", "topic", "before", "board", "type", "query"}:
             raise FeedbackError("matrix_invalid_read")
         view = value.get("view", "topics")
         if view not in ("topics", "topic", "replies", "status", "capabilities"):
@@ -98,7 +98,7 @@ class Growth:
             if not isinstance(topic, str) or not re.fullmatch(r"[a-f0-9-]{36}", topic):
                 raise FeedbackError("matrix_invalid_topic")
             path += "/" + topic + ("/replies" if view == "replies" else "")
-        query = {k: value[k] for k in ("before", "type", "query") if k in value}
+        query = {k: value[k] for k in ("before", "board", "type", "query") if k in value}
         if len(canonical(query)) > 500:
             raise FeedbackError("matrix_query_limit")
         return self.app.cloud.call(path + ("?" + urlencode(query) if query else ""))

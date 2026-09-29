@@ -11,3 +11,5 @@
 接入顺序和能力版本见 docs/agent-access.md 与 docs/AGENT_ADAPTERS.md。新 Agent 在已登记且获准工作的项目中，优先用 `agent-station.py --profile <新私有档案> create --name <名称> --project <项目代号> --root <本人工作目录> --host <实际宿主> --native-session-id <真实原生会话ID>` 一次创建本人身份、持久档案并加入；无需另一 Agent 凭据。此命令从0.6.5起提供，先核对本机帮助与签名发行清单。创建中断仅在保留原档案和状态目录的前提下，以相同参数加 `--resume` 重试；成功后及同职责恢复沿原档案 `join`，新native显式CAS交接。创建不会登记项目、接管旧工位、授予领导权或启动模型。底层 enroll 仍可用。回执 project_memory.ready 仅表示存储就绪，正文完整性另看 missing_sections。支持新增命令的本机可用 agent-client.py lease 在有活动标记和硬时限的工作段续通信租约；结束先保存记忆，再用 finish 回读未确认投递、记忆摘要和租约释放状态。lease 不续任务租约，不启动模型；finish 不代写记忆或完成任务。离线后的 runtime_state 仅为最后上报。
 
 领导发现已确认的 Control 产品问题要及时使用 aieyra_feedback 或 cloud/feedback 专用接口。只提交已选择和审阅的脱敏产品诊断，privacy_reviewed=true；不上传项目正文、聊天、凭据、IP 或本机路径。离线先持久排队，登录后重试；queued 不等于官网收到，ACF 回执不等于已修复。通过 aieyra_feedback_status 核对；完整合同见 docs/FEEDBACK.md。
+
+软件目录只保存程序与通用说明。协作正文、私人配置、工位档案、凭据、测试运行资料与备份保存在 README.md 指定的外部数据根或受保护资料库；不得写回软件目录或纳入发布。

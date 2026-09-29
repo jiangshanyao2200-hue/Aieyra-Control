@@ -3,12 +3,17 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out =
   process.env.CONTROL_TEST_OUTPUT ||
-  path.join(root, 'tests/test-output', `office-home-live-${Date.now()}-${process.pid}`);
+  path.join(
+    os.tmpdir(),
+    'aieyra-control-test-output',
+    `office-home-live-${Date.now()}-${process.pid}`,
+  );
 await mkdir(out, { recursive: true });
 const bridge = spawn(
   'python.exe',

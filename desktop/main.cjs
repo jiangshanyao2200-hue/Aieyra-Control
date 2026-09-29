@@ -18,25 +18,29 @@ const { HumanNotificationLedger } = require('./human-notifications.cjs');
 const { HumanNotificationHost } = require('./human-notification-host.cjs');
 const { HumanRequestFeed } = require('./human-request-feed.cjs');
 const { OSOwnerPipe, validOwnerPipeName } = require('./os-owner-pipe.cjs');
-const { installationPaths, prepareDirectories } = require('./paths.cjs');
+const { installationPaths, prepareDirectories, externalPath } = require('./paths.cjs');
 const { LoginWindow, validLoginUrl } = require('./login.cjs');
 const root = path.resolve(__dirname, '..');
-const installation = installationPaths({ packaged: app.isPackaged, source: root });
+let installation;
 try {
+  installation = installationPaths({ packaged: app.isPackaged, source: root });
   prepareDirectories(installation);
 } catch (error) {
   require('electron').dialog.showErrorBox(
     'Aieyra Control',
-    error.message + '\n请将软件解压到可写的文件夹。',
+    error.message + '\n请检查软件目录之外的用户数据位置及 storage.json 配置。',
   );
   app.exit(1);
   throw error;
 }
 process.env.AIEYRA_CONTROL_HOME = installation.home;
+process.env.AIEYRA_CONTROL_DATA = installation.data;
 process.env.AIEYRA_CONTROL_NODE = process.execPath;
 const args = process.argv.slice(1);
 const option = (name) =>
   args.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
+for (const name of ['user-data-dir', 'service-data-dir', 'config'])
+  if (option(name)) externalPath(option(name), [root, installation.home]);
 const testing = process.env.AIEYRA_CONTROL_PLATFORM_TEST === '1';
 const loginWindow = new LoginWindow({ BrowserWindow, session, hidden: testing });
 const osManaged = args.includes('--os-managed');

@@ -18,6 +18,7 @@ import {
 } from './station-model.js';
 import { stationCodes, recentMessages, homeLayout } from './office-home-model.js';
 import { createAccountPanel } from './account.js';
+import { createLinkPanel } from './device-link.js';
 
 const $ = (s) => document.querySelector(s),
   sources = { snapshot: { value: null }, registry: { value: null } },
@@ -33,6 +34,8 @@ let rows = [],
   chatOpenGeneration = 0,
   backdropPressed = false;
 let timer = null;
+let remoteOffice = null,
+  officeGeneration = 0;
 let chat = {
   items: [],
   before: null,
@@ -232,6 +235,7 @@ function renderDialog(options = {}) {
       task: L('任务详情', 'Task details'),
       chat: L('群聊', 'Conversation'),
       account: L('账号', 'Account'),
+      link: L('设备连接', 'Device links'),
     }[view.type];
   updateHTML($('#dialog-title'), esc(title));
   $('#dialog-back').hidden = !stack.length;
@@ -239,15 +243,17 @@ function renderDialog(options = {}) {
   b.classList.toggle('chat-history', view.type === 'chat');
   updateHTML(
     b,
-    view.type === 'account'
-      ? account.markup()
-      : view.type === 'chat'
-        ? chatMarkup()
-        : view.type === 'station'
-          ? stationDetail()
-          : view.type === 'tasks'
-            ? taskList()
-            : taskDetail(),
+    view.type === 'link'
+      ? deviceLink.markup()
+      : view.type === 'account'
+        ? account.markup()
+        : view.type === 'chat'
+          ? chatMarkup()
+          : view.type === 'station'
+            ? stationDetail()
+            : view.type === 'tasks'
+              ? taskList()
+              : taskDetail(),
   );
   updateHTML(
     $('#dialog-footer'),
@@ -326,10 +332,42 @@ function maximize() {
   );
   $('#dialog-max').setAttribute('aria-pressed', String(max));
 }
+function officePath(resource, before) {
+  if (!remoteOffice) return '/api/' + resource + (before ? '?before=' + before : '');
+  return (
+    '/api/link/view?' +
+    new URLSearchParams({
+      connection: remoteOffice.connection,
+      service: remoteOffice.service,
+      resource,
+      ...(before ? { before } : {}),
+    })
+  );
+}
+function selectOffice(selected) {
+  officeGeneration++;
+  remoteOffice = selected;
+  chatOpenGeneration++;
+  controllers.forEach((c) => c.abort());
+  sources.snapshot = { value: null };
+  sources.registry = { value: null };
+  rows = [];
+  codes.clear();
+  colors.clear();
+  if (view) close();
+  document.querySelector('#office-location').textContent = selected
+    ? '远端 · ' + selected.name
+    : '本地办公室';
+  render();
+  if (!polling) refresh();
+}
 async function get(path) {
   const controller = new AbortController();
   controllers.add(controller);
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    path.startsWith('/api/link/view') ? 32000 : 8000,
+  );
   try {
     const r = await fetch(path, { cache: 'no-store', signal: controller.signal });
     if (!r.ok) throw Error('read');
@@ -375,7 +413,7 @@ async function loadHistory(older = false) {
   const saved = scrollState();
   renderDialog();
   try {
-    const v = await get('/api/chat-history' + (before ? '?before=' + before : ''));
+    const v = await get(officePath('chat-history', before));
     if (
       !Array.isArray(v?.messages) ||
       typeof v.has_more !== 'boolean' ||
@@ -410,11 +448,13 @@ async function refresh() {
   if (polling || disposed) return;
   clearTimeout(timer);
   polling = true;
+  const generation = officeGeneration;
   $('#main').dataset.refreshing = 'true';
   await Promise.all(
     Object.keys(sources).map(async (key) => {
       try {
-        const v = await get('/api/' + key);
+        const v = await get(officePath(key));
+        if (generation !== officeGeneration) return;
         if (
           key === 'snapshot'
             ? !['agents', 'messages', 'tasks', 'resources', 'projects'].every((k) =>
@@ -429,12 +469,16 @@ async function refresh() {
           error: false,
         };
       } catch {
-        sources[key].error = true;
+        if (generation === officeGeneration) sources[key].error = true;
       }
     }),
   );
   if (disposed) return;
   polling = false;
+  if (generation !== officeGeneration) {
+    refresh();
+    return;
+  }
   if (view?.type === 'chat') {
     const saved = scrollState(),
       ids = new Set(chat.items.map((m) => m.id));
@@ -449,10 +493,28 @@ async function refresh() {
 
 document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
 $('#app').innerHTML =
-  `<main id="main" class="office-home" tabindex="-1" aria-label="${L('工位首页', 'Workstation home')}"><div id="home-grid" class="home-grid"></div></main><div id="home-sync" class="home-sync" role="status"></div><nav class="home-sidebar" aria-label="${L('任务、群聊与账号', 'Tasks, chat and account')}"><button id="open-tasks" class="home-orb" aria-label="${L('任务', 'Tasks')}" aria-haspopup="dialog">${icon('tasks')}<span>${L('任务', 'Tasks')}</span></button><button id="open-chat" class="home-orb" aria-label="${L('群聊', 'Conversation')}" aria-haspopup="dialog">${icon('chat')}<span>${L('群聊', 'Chat')}</span></button><button id="open-account" class="home-orb" aria-label="登录" aria-haspopup="dialog">${icon('account')}<span>登录</span></button></nav><dialog id="office-dialog" class="office-dialog" aria-labelledby="dialog-title"><header><button id="dialog-back" class="dialog-tool" aria-label="${L('返回列表', 'Back')}" hidden>${icon('back')}</button><h2 id="dialog-title"></h2><div class="dialog-controls"><button id="dialog-max" class="dialog-tool" aria-label="${L('放大窗口', 'Expand window')}" aria-pressed="false">${icon('expand')}</button><button id="dialog-close" class="dialog-tool" aria-label="${L('关闭弹窗', 'Close dialog')}">${icon('close')}</button></div></header><div id="dialog-body" class="dialog-body" tabindex="0"></div><footer id="dialog-footer" class="dialog-footer"></footer></dialog>`;
+  `<main id="main" class="office-home" tabindex="-1" aria-label="${L('工位首页', 'Workstation home')}"><div id="home-grid" class="home-grid"></div></main><div id="home-sync" class="home-sync" role="status"></div><div id="office-location" class="office-location">本地办公室</div><nav class="home-sidebar" aria-label="${L('任务、群聊与账号', 'Tasks, chat and account')}"><button id="open-tasks" class="home-orb" aria-label="${L('任务', 'Tasks')}" aria-haspopup="dialog">${icon('tasks')}<span>${L('任务', 'Tasks')}</span></button><button id="open-chat" class="home-orb" aria-label="${L('群聊', 'Conversation')}" aria-haspopup="dialog">${icon('chat')}<span>${L('群聊', 'Chat')}</span></button><button id="open-link" class="home-orb" aria-label="设备连接" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m10 14 4-4m-5 7-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2-2 2-2a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/></svg><span>连接</span></button><button id="open-account" class="home-orb" aria-label="登录" aria-haspopup="dialog">${icon('account')}<span>登录</span></button></nav><dialog id="office-dialog" class="office-dialog" aria-labelledby="dialog-title"><header><button id="dialog-back" class="dialog-tool" aria-label="${L('返回列表', 'Back')}" hidden>${icon('back')}</button><h2 id="dialog-title"></h2><div class="dialog-controls"><button id="dialog-max" class="dialog-tool" aria-label="${L('放大窗口', 'Expand window')}" aria-pressed="false">${icon('expand')}</button><button id="dialog-close" class="dialog-tool" aria-label="${L('关闭弹窗', 'Close dialog')}">${icon('close')}</button></div></header><div id="dialog-body" class="dialog-body" tabindex="0"></div><footer id="dialog-footer" class="dialog-footer"></footer></dialog>`;
 $('#main').addEventListener('click', (e) => {
   const b = e.target.closest('[data-seat]');
   if (b) open('station', b.dataset.seat);
+});
+const deviceLink = createLinkPanel({
+  request: accountRequest,
+  onChange: () => {
+    if (view?.type === 'link') renderDialog();
+  },
+  onSelect: selectOffice,
+});
+$('#open-link').addEventListener('click', () => {
+  open('link');
+  deviceLink.refresh();
+});
+$('#dialog-body').addEventListener('input', (e) => deviceLink.capture(e.target));
+$('#dialog-body').addEventListener('submit', (e) => {
+  if (e.target.id === 'link-pair-form') {
+    e.preventDefault();
+    deviceLink.action(null, e.target);
+  }
 });
 const account = createAccountPanel({
   request: accountRequest,
@@ -488,6 +550,8 @@ $('#office-dialog').addEventListener('click', (e) => {
   const dismiss = backdropPressed && e.target === e.currentTarget && outsideDialog(e);
   backdropPressed = false;
   if (dismiss) return close();
+  const link = e.target.closest('[data-link]');
+  if (link) return deviceLink.action(link);
   const a = e.target.closest('[data-account]');
   if (a) return account.action(a.dataset.account);
   const t = e.target.closest('[data-task]');
@@ -508,7 +572,9 @@ $('#office-dialog').addEventListener('click', (e) => {
 $('#office-dialog').addEventListener('keydown', (e) => {
   if (e.key !== 'Tab') return;
   const nodes = [
-      ...e.currentTarget.querySelectorAll('button:not(:disabled),a[href],summary,[tabindex="0"]'),
+      ...e.currentTarget.querySelectorAll(
+        'button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]',
+      ),
     ].filter((n) => n.getClientRects().length && !n.closest('[hidden]')),
     first = nodes[0],
     last = nodes.at(-1);

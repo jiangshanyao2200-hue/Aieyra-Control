@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { access, readdir, open } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -72,8 +72,8 @@ const suite = process.argv.includes('--live')
     ? 'cloud-design.mjs'
     : 'office-home.mjs';
 env.CONTROL_TEST_OUTPUT ||= path.resolve(
-  directory,
-  '../test-output',
+  tmpdir(),
+  'aieyra-control-test-output',
   `${path.basename(suite, '.mjs')}-${Date.now()}-${process.pid}`,
 );
 console.log(JSON.stringify({ suite, output: env.CONTROL_TEST_OUTPUT }));

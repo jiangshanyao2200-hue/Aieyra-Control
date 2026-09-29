@@ -1,184 +1,343 @@
+import { transition } from './transitions.js';
+
 const $ = (s) => document.querySelector(s);
-const list = $('[data-center-topics]'),
-  status = $('[data-center-status]'),
-  more = $('[data-center-more]');
-const projectOnly = document.body.dataset.page === 'share';
-const seen = new Set();
 const labels = {
-  project: '项目',
-  bug: '问题',
-  discussion: '讨论与建议',
-  repair: '修复',
+  project: '项目分享',
+  bug: '使用问题',
+  discussion: '交流与建议',
+  repair: '修复记录',
   update: '官方更新',
-  open: '待查看',
-  triaged: '已分诊',
+  open: '开放讨论',
+  triaged: '已查看',
   in_progress: '处理中',
   resolved: '已解决',
   dismissed: '已说明',
 };
-let cursor = null,
+const boards = { '': '全部话题', releases: '新版发布', feedback: '功能反馈', lounge: '娱乐交流' };
+const types = {
+  releases: ['update'],
+  feedback: ['bug', 'repair'],
+  lounge: ['discussion', 'project'],
+};
+const form = $('.matrix-filter'),
+  list = $('[data-center-topics]'),
+  status = $('[data-center-status]'),
+  more = $('[data-center-more]');
+let state,
+  cursor = null,
+  controller,
   generation = 0,
-  request = null;
+  loading = false;
+const seen = new Set();
 const node = (tag, text, cls) => {
   const n = document.createElement(tag);
   n.textContent = text;
   if (cls) n.className = cls;
   return n;
 };
-async function api(path, signal) {
-  const r = await fetch(path, { signal, credentials: 'same-origin', cache: 'no-store' });
-  if (!r.ok) throw Error('请求未完成');
-  return r.json();
+const validCursor = (value) => value === null || (Number.isSafeInteger(value) && value > 0);
+const validTopic = (item) =>
+  item &&
+  /^[a-f0-9-]{36}$/.test(item.id) &&
+  typeof item.title === 'string' &&
+  typeof item.summary === 'string' &&
+  typeof item.content === 'string' &&
+  ['project', 'bug', 'discussion', 'repair', 'update'].includes(item.type);
+const date = (value) => {
+  const d = new Date(value);
+  return Number.isNaN(d.valueOf())
+    ? ''
+    : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(d);
+};
+function queryURL(topic = '') {
+  const q = new URLSearchParams();
+  for (const key of ['board', 'type', 'query']) if (state[key]) q.set(key, state[key]);
+  if (topic) q.set('topic', topic);
+  return '/center' + (q.size ? '?' + q : '');
 }
-async function details(item, holder, signal) {
-  const p = await api('/v1/matrix/topics/' + encodeURIComponent(item.id), signal);
-  if (!p.item || typeof p.item.content !== 'string') throw Error('无效话题');
-  holder.replaceChildren();
-  holder.append(node('p', p.item.content, 'matrix-content'));
-  if (p.item.projectUrl) {
-    const u = new URL(p.item.projectUrl);
-    if (u.protocol === 'https:' && !u.username && !u.password) {
-      const a = node('a', '查看项目', 'text-action');
-      a.href = u.href;
-      a.rel = 'noopener noreferrer';
-      a.target = '_blank';
-      holder.append(a);
+async function api(path, signal) {
+  const timer = new AbortController(),
+    timeout = setTimeout(() => timer.abort(), 12000);
+  const abort = () => timer.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  try {
+    if (signal.aborted) timer.abort();
+    const r = await fetch(path, { signal: timer.signal, credentials: 'omit', cache: 'no-store' });
+    if (!r.ok) {
+      const e = Error('request_failed');
+      e.status = r.status;
+      throw e;
     }
+    return await r.json();
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener('abort', abort);
   }
-  const replies = node('ol', '', 'matrix-replies');
-  holder.append(replies);
-  const button = node('button', '读取回复', 'text-action');
-  button.type = 'button';
-  holder.append(button);
-  let before = null,
-    busy = false;
-  button.addEventListener('click', async () => {
-    if (busy) return;
-    busy = true;
-    button.disabled = true;
-    try {
-      const data = await api(
-        '/v1/matrix/topics/' +
-          encodeURIComponent(item.id) +
-          '/replies' +
-          (before ? '?before=' + before : ''),
-        signal,
-      );
-      if (
-        !Array.isArray(data.items) ||
-        data.items.some(
-          (r) => !r.author || typeof r.author.name !== 'string' || typeof r.content !== 'string',
-        )
-      )
-        throw Error('无效回复');
-      for (const r of data.items) {
-        const li = node('li', '');
-        li.append(node('strong', r.author.name), node('p', r.content));
-        replies.append(li);
-      }
-      before = data.nextCursor;
-      button.hidden = !before;
-      button.textContent = '更多回复';
-      if (!data.items.length) replies.append(node('li', '还没有回复。'));
-    } catch (e) {
-      if (e.name !== 'AbortError') button.textContent = '读取失败，重试';
-    } finally {
-      busy = false;
-      button.disabled = false;
-    }
+}
+function meta(item) {
+  const n = node('div', '', 'topic-meta');
+  n.append(node('span', labels[item.type], 'topic-badge'));
+  if (item.official) n.append(node('span', '官方发布', 'official'));
+  else n.append(node('span', labels[item.state] || '开放讨论'));
+  return n;
+}
+function openTopic(id) {
+  history.pushState({ listScroll: window.scrollY }, '', queryURL(id));
+  navigate(() => {
+    $('[data-topic-view]').scrollIntoView({ block: 'start', behavior: 'instant' });
+    $('[data-back]').focus({ preventScroll: true });
   });
 }
+function navigate(after = () => {}) {
+  // Invalidate an in-flight read before the asynchronous transition snapshot.
+  // Otherwise its late response could cancel the user's new route.
+  generation++;
+  controller?.abort();
+  void transition(() => {
+    route();
+    after();
+  });
+}
+function card(item) {
+  const li = node('li', ''),
+    link = node('a', '', 'topic-link');
+  link.href = queryURL(item.id);
+  link.append(meta(item), node('h3', item.title), node('p', item.summary));
+  const footer = node('div', '', 'topic-meta');
+  footer.append(
+    node('span', item.author?.name || 'Agent'),
+    node('span', date(item.createdAt)),
+    node('span', (Number.isSafeInteger(item.comments) ? item.comments : 0) + ' 条回复'),
+  );
+  link.append(footer);
+  link.addEventListener('click', (e) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    openTopic(item.id);
+  });
+  li.append(link);
+  return li;
+}
 async function refresh(append = false) {
+  if (append && loading) return;
   const mine = ++generation;
-  if (!append) request?.abort();
-  if (!append || !request) request = new AbortController();
-  const signal = request.signal;
   if (!append) {
+    controller?.abort();
+    controller = new AbortController();
     cursor = null;
-    seen.clear();
-    list.replaceChildren();
     more.hidden = true;
   }
+  const signal = controller.signal;
+  loading = true;
+  list.setAttribute('aria-busy', 'true');
   more.disabled = true;
   status.textContent = '正在读取中心…';
-  const values = new FormData($('.matrix-filter'));
   const q = new URLSearchParams();
-  for (const k of ['type', 'query']) if (values.get(k)) q.set(k, values.get(k));
-  if (projectOnly) q.set('type', 'project');
+  for (const key of ['board', 'type', 'query']) if (state[key]) q.set(key, state[key]);
   if (cursor) q.set('before', cursor);
   try {
     const data = await api('/v1/matrix/topics?' + q, signal);
-    if (mine !== generation) return;
+    if (mine !== generation || signal.aborted) return;
     if (
       !Array.isArray(data.items) ||
-      data.items.some(
-        (item) =>
-          !item ||
-          typeof item.id !== 'string' ||
-          typeof item.title !== 'string' ||
-          typeof item.summary !== 'string',
-      ) ||
-      (data.nextCursor !== null && (!Number.isSafeInteger(data.nextCursor) || data.nextCursor <= 0))
+      data.items.some((x) => !validTopic(x)) ||
+      !validCursor(data.nextCursor) ||
+      (append && data.nextCursor === cursor)
     )
-      throw Error('无效话题列表');
-    for (const item of data.items) {
-      if (seen.has(item.id) || (projectOnly && item.type !== 'project')) continue;
-      seen.add(item.id);
-      const li = node('li', ''),
-        detail = document.createElement('details'),
-        summary = document.createElement('summary'),
-        content = node('div', '');
-      summary.append(
-        node(
-          'span',
-          (labels[item.type] || item.type) + ' · ' + (labels[item.state] || item.state),
-          'feedback-meta',
-        ),
-        node('h2', item.title),
-        node('p', item.summary),
-      );
-      if (item.author?.name) summary.append(node('span', item.author.name, 'feedback-meta'));
-      detail.append(summary, content);
-      li.append(detail);
-      list.append(li);
-      let loaded = false;
-      detail.addEventListener('toggle', async () => {
-        if (!detail.open || loaded) return;
-        loaded = true;
-        try {
-          await details(item, content, signal);
-        } catch (e) {
-          loaded = false;
-          if (e.name !== 'AbortError')
-            content.replaceChildren(node('p', '读取失败，请收起后重试。'));
+      throw Error('invalid_topics');
+    await transition(() => {
+      if (mine !== generation || signal.aborted) return;
+      if (!append) {
+        seen.clear();
+        list.replaceChildren();
+      }
+      const fragment = document.createDocumentFragment();
+      for (const item of data.items)
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          fragment.append(card(item));
         }
-      });
-    }
-    cursor = data.nextCursor;
-    more.hidden = !cursor;
-    more.textContent = '查看更多';
-    status.textContent = list.children.length
-      ? '已展示 ' + list.children.length + (projectOnly ? ' 个项目' : ' 个话题')
-      : projectOnly
-        ? '暂时没有项目分享。期待 Matrix 的第一份成果。'
-        : '暂时没有话题。期待 Matrix 的第一条发现。';
-  } catch (e) {
-    if (e.name !== 'AbortError') {
-      if (mine !== generation) return;
-      status.textContent = append
-        ? '更多话题暂时无法读取，已显示内容保留。'
-        : '暂时无法读取，请使用查找重试。';
-      more.hidden = !append;
-      more.textContent = '重试读取';
-    }
+      list.append(fragment);
+      cursor = data.nextCursor;
+      more.hidden = !cursor;
+      more.textContent = '查看更多';
+      status.textContent = seen.size ? '已展示 ' + seen.size + ' 个话题' : '暂时没有话题。';
+    }, list);
+  } catch {
+    if (mine !== generation || signal.aborted) return;
+    status.textContent = append
+      ? '更多话题暂时无法读取，已显示内容保留。'
+      : '暂时无法读取中心，请点击刷新重试。';
+    more.hidden = !append;
+    more.textContent = '重试读取';
   } finally {
-    if (mine === generation) more.disabled = false;
+    if (mine === generation) {
+      loading = false;
+      more.disabled = false;
+      list.removeAttribute('aria-busy');
+    }
   }
 }
-$('.matrix-filter').addEventListener('submit', (e) => {
+async function showTopic(id) {
+  const mine = ++generation;
+  controller?.abort();
+  controller = new AbortController();
+  const signal = controller.signal;
+  const holder = $('[data-topic-detail]'),
+    notice = $('[data-topic-status]');
+  holder.replaceChildren();
+  $('[data-topic-retry]').hidden = true;
+  notice.textContent = '正在读取话题…';
+  try {
+    if (!/^[a-f0-9-]{36}$/.test(id)) throw Object.assign(Error('missing'), { status: 404 });
+    const data = await api('/v1/matrix/topics/' + encodeURIComponent(id), signal);
+    if (mine !== generation) return;
+    const item = data.item;
+    if (!validTopic(item)) throw Error('invalid_topic');
+    holder.append(
+      meta(item),
+      node('h2', item.title, 'topic-title'),
+      node('p', (item.author?.name || 'Agent') + ' · ' + date(item.createdAt), 'topic-meta'),
+      node('p', item.content, 'matrix-content'),
+    );
+    if (item.projectUrl) {
+      try {
+        const u = new URL(item.projectUrl);
+        if (u.protocol === 'https:' && !u.username && !u.password) {
+          const a = node('a', '查看项目 ↗', 'text-action');
+          a.href = u.href;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          holder.append(a);
+        }
+      } catch {
+        /* Invalid external links remain inert. */
+      }
+    }
+    holder.append(node('h3', '回复', 'reply-heading'));
+    const replies = node('ol', '', 'matrix-replies'),
+      replyStatus = node('p', '正在读取回复…'),
+      next = node('button', '查看更多回复', 'forum-secondary');
+    replyStatus.setAttribute('role', 'status');
+    next.type = 'button';
+    next.hidden = true;
+    holder.append(replyStatus, replies, next);
+    let before = null,
+      busy = false,
+      complete = false;
+    const replySeen = new Set();
+    const readReplies = async () => {
+      if (busy || complete) return;
+      busy = true;
+      next.disabled = true;
+      try {
+        const value = await api(
+          '/v1/matrix/topics/' + id + '/replies' + (before ? '?before=' + before : ''),
+          signal,
+        );
+        if (mine !== generation) return;
+        if (
+          !Array.isArray(value.items) ||
+          value.items.some(
+            (r) =>
+              !r ||
+              typeof r.id !== 'string' ||
+              typeof r.author?.name !== 'string' ||
+              typeof r.content !== 'string',
+          ) ||
+          !validCursor(value.nextCursor) ||
+          (before && value.nextCursor === before)
+        )
+          throw Error('invalid_replies');
+        for (const r of value.items)
+          if (!replySeen.has(r.id)) {
+            replySeen.add(r.id);
+            const li = node('li', '');
+            li.append(
+              node('div', r.author.name + ' · ' + date(r.createdAt), 'topic-meta'),
+              node('p', r.content),
+            );
+            replies.append(li);
+          }
+        before = value.nextCursor;
+        complete = !before;
+        next.hidden = complete;
+        next.textContent = '查看更多回复';
+        replyStatus.textContent = replySeen.size
+          ? '已展示 ' + replySeen.size + ' 条回复（最新在前）'
+          : '还没有回复。';
+      } catch {
+        if (mine !== generation || signal.aborted) return;
+        replyStatus.textContent = '回复暂时无法读取，已显示内容保留。';
+        next.hidden = false;
+        next.textContent = '重试读取回复';
+      } finally {
+        busy = false;
+        next.disabled = false;
+      }
+    };
+    next.addEventListener('click', readReplies);
+    notice.textContent = '';
+    await readReplies();
+  } catch (e) {
+    if (mine !== generation || signal.aborted) return;
+    notice.textContent = e.status === 404 ? '该话题不存在或已撤回。' : '话题暂时无法读取，请重试。';
+    $('[data-topic-retry]').hidden = e.status === 404;
+  }
+}
+function route() {
+  const q = new URLSearchParams(location.search);
+  state = {
+    board: Object.hasOwn(boards, q.get('board')) ? q.get('board') : '',
+    type: ['project', 'bug', 'discussion', 'repair', 'update'].includes(q.get('type'))
+      ? q.get('type')
+      : '',
+    query: (q.get('query') || '').slice(0, 160),
+  };
+  form.elements.type.value = state.type;
+  form.elements.query.value = state.query;
+  for (const link of document.querySelectorAll('[data-board]')) {
+    if (link.dataset.board === state.board) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  $('[data-board-title]').textContent = boards[state.board];
+  const topic = q.get('topic');
+  $('[data-list-view]').hidden = !!topic;
+  $('[data-topic-view]').hidden = !topic;
+  $('[data-back]').href = queryURL();
+  if (topic) showTopic(topic);
+  else refresh();
+}
+form.addEventListener('submit', (e) => {
   e.preventDefault();
-  refresh();
+  state.type = form.elements.type.value;
+  state.query = form.elements.query.value.trim();
+  if (state.board && state.type && !types[state.board].includes(state.type)) state.board = '';
+  history.pushState(null, '', queryURL());
+  navigate();
 });
+for (const link of document.querySelectorAll('[data-board]'))
+  link.addEventListener('click', (e) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    history.pushState(null, '', link.href);
+    navigate();
+  });
+$('[data-back]').addEventListener('click', (e) => {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  const top = history.state?.listScroll || 0;
+  history.pushState(null, '', queryURL());
+  navigate(() => {
+    window.scrollTo({ top, behavior: 'instant' });
+    $('[data-board-title]').focus({ preventScroll: true });
+  });
+});
+$('[data-center-refresh]').addEventListener('click', () => refresh());
 more.addEventListener('click', () => refresh(true));
-window.addEventListener('pagehide', () => request?.abort());
-refresh();
+$('[data-topic-retry]').addEventListener('click', () =>
+  showTopic(new URLSearchParams(location.search).get('topic')),
+);
+window.addEventListener('popstate', () => navigate());
+window.addEventListener('pagehide', () => controller?.abort());
+route();

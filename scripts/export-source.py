@@ -21,11 +21,40 @@ BLOCKED = {
     ".runtime",
     "test-output",
     "history",
+    "私有数据",
+    "Aieyra 共享库",
+    ".codex",
 }
 SENSITIVE = re.compile(
     rb"gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{24,}|\bAKIA[A-Z0-9]{16}\b|\bxox[baprs]-[A-Za-z0-9-]{15,}"
 )
 BINARY_ASSETS = {
+    "cloud/site/assets/scene-01-clean.webp": "999c963607004dcbb0eb67a38011fb85495c58626dcd87a94fc64f494735ba07",
+    "cloud/site/assets/scene-01-clean-small.webp": "858bf4b27f889ffa2346a20ed004e93e62cc29eaf09b70f47bdad63657eab81f",
+    "cloud/site/assets/scene-02-clean.webp": "d2b2c487940f2287b94454a7c545246fbb58ce386516cff5eb88ef0f49c65790",
+    "cloud/site/assets/scene-02-clean-small.webp": "eb803fdb989e021d53ccc476657b9db3c5fb1b1359d2ef866252c86057defee2",
+    "cloud/site/assets/scene-03-clean.webp": "0a39b664249239eaac7f90ff3051abcbd3b046b24cde7e542b446858060adb06",
+    "cloud/site/assets/scene-03-clean-small.webp": "34bc27876e601460af612aaf7d11070f67bba3ff0640ff5e4b3185c716fb6316",
+    "cloud/site/assets/scene-05-clean.webp": "cfb6f1c4fb833e182f67882d5b980824d930797d22a9fca5a6a3d4fcb6af83ee",
+    "cloud/site/assets/scene-05-clean-small.webp": "6f061c3acd3face43650ec341f0211bae03d03681310b79ecde6e7e949514b91",
+    "cloud/site/assets/scene-01.webp": "1981185c3ba4cdb358262fb361f41b7efeb01dfc82b444a141a16f02cc985e43",
+    "cloud/site/assets/scene-01-small.webp": "c7444bcfe7505e0cd8745d58d5b389f590c3cf008dc90426c09d4e2a8f7686a6",
+    "cloud/site/assets/scene-02.webp": "ba11f7a0369c909f424f036f72cb89539b773e1f5c9b16ad07e2f4a69167d2da",
+    "cloud/site/assets/scene-02-small.webp": "233a17da2787b216fefdc8919e91907fa577046ad15c6d24a6e0894861b19d44",
+    "cloud/site/assets/scene-03.webp": "fe3ddc5af78d42ff7fd14484275e6816a22204d81dca5027ad0e4ff24cca0d0c",
+    "cloud/site/assets/scene-03-small.webp": "906ee25f17c2f7b270944966e4ecdfe007649339139d03a02ae7e1b2b5a7f908",
+    "cloud/site/assets/scene-04.webp": "6b50ad3a52dcaf34eaca6175818ae4ac318473f55d7c098d1da3753036fdbd26",
+    "cloud/site/assets/scene-04-small.webp": "c6f82a3c1903d971e1410c91d9548b112d52f8e96677aa1a93b90ddb0b9c55e5",
+    "cloud/site/assets/scene-05.webp": "d49411c91a42cab47ca5df51493a03725633d8fa9ab0d61ead0460d6d3cd85ed",
+    "cloud/site/assets/scene-05-small.webp": "a3eaf88dad3567b6e3413ee6a6e9119fc6348e88048defc762c7110c5e81d390",
+    "cloud/site/assets/scene-06.webp": "4f0ddc3d8ffb75f972bba0ef158764e3272a1804634e34aec00a0b8ecfb773f4",
+    "cloud/site/assets/scene-06-small.webp": "3b77b9b02602c5d286739de9651892cbcb59d152c29a2127cea4e5bc318a07fc",
+    "cloud/site/assets/scene-07.webp": "36aed7d9382aa4c7ab168193a1f77ddbd3b096d91e54f1694e6f2694a061b1b6",
+    "cloud/site/assets/scene-07-small.webp": "c80d6fd4d16efaae02fbafea9e169ba0408629a3d0f50cb065f8eabb70897162",
+    "cloud/site/assets/scene-08.webp": "8683f65f159174c73d0b21533406b9e46f0041d849678f6d009166f81393bb00",
+    "cloud/site/assets/scene-08-small.webp": "035e9a3ae5e06c0922b22b4478a4655b3ebbb6c6eb07a370bf2286401a1af023",
+    "cloud/site/assets/collaboration.webp": "5b1d27f46b6210d5ec5ee6f765ef6ac1af071fa6c584df2ba84d1b98b0ca5569",
+    "cloud/site/assets/collaboration-small.webp": "74fd0b63211c029acfd194e8fec0239fce53ff5114ac64d4928cbe5146cf7788",
     "desktop/assets/icon.png": "f63b931ca21255532059af9e26bcc444ed738bf770ab003ed4b0553ab6a80cba",
     "desktop/assets/icon.ico": "0ca1399c1d88d1caaf8d02cb6c6a6befdfa1490f7289f3c146fc4c551d62f3c3",
 }
@@ -102,7 +131,7 @@ def validate_public_files(files):
             raise ValueError("private_environment_path_in_" + name)
         if set(parts) & BLOCKED or Path(name).is_absolute() or ".." in parts:
             raise ValueError("private_artifact_path_in_" + name)
-        if Path(name).suffix in {".png", ".ico"}:
+        if Path(name).suffix in {".png", ".ico", ".webp"}:
             if hashlib.sha256(raw).hexdigest() != BINARY_ASSETS.get(name):
                 raise ValueError("unreviewed_binary_asset_in_" + name)
             continue
@@ -168,7 +197,10 @@ def sources(include_development=False):
         ("desktop", {".cjs", ".html", ".css", ".json", ".png", ".ico"}),
     ]
     if include_development:
-        groups += [("cloud", {".py", ".html", ".css", ".js"}), (".github", {".yml", ".yaml"})]
+        groups += [
+            ("cloud", {".py", ".html", ".css", ".js", ".webp"}),
+            (".github", {".yml", ".yaml"}),
+        ]
     for folder, suffixes in groups:
         for p in (ROOT / folder).rglob("*"):
             parts = p.relative_to(ROOT).parts
@@ -180,6 +212,8 @@ def sources(include_development=False):
                 and p.name != "package-lock.json"
                 and ".local." not in p.name
             ):
+                if not p.resolve().is_relative_to(ROOT.resolve()):
+                    raise ValueError("source_link_outside_software")
                 files[p.relative_to(ROOT).as_posix()] = p.read_bytes()
     names = [
         "agent-client.py",
@@ -199,6 +233,7 @@ def sources(include_development=False):
             "build-macos.py",
             "launcher.cs",
             "package-smoke.py",
+            "link_runtime.py",
             "seal-build.py",
             "check-quality.py",
             "check-public-history.py",
@@ -220,6 +255,7 @@ def sources(include_development=False):
     files["docs/agent-access.md"] = (ROOT / "docs/agent-access.md").read_bytes()
     files["docs/AGENT_ADAPTERS.md"] = (ROOT / "docs/AGENT_ADAPTERS.md").read_bytes()
     files["docs/MATRIX_GROWTH.md"] = (ROOT / "docs/MATRIX_GROWTH.md").read_bytes()
+    files["docs/LINK.md"] = (ROOT / "docs/LINK.md").read_bytes()
     for name in ["DEVELOPMENT.md", "ARCHITECTURE.md", "CHANGELOG.md"]:
         files["docs/" + name] = (ROOT / "docs" / name).read_bytes()
     if include_development:
@@ -241,6 +277,7 @@ def sources(include_development=False):
     if include_development:
         files["cloud/feedback_contract.py"] = (ROOT / "service/feedback_contract.py").read_bytes()
         files["cloud/Dockerfile"] = (ROOT / "cloud/Dockerfile").read_bytes()
+        files["cloud/release-public.pem"] = (ROOT / "config/release-public.pem").read_bytes()
         for name in [
             "package.json",
             "package-lock.json",
