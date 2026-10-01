@@ -1,5 +1,11 @@
 # Changes
 
+## 0.7.1
+
+- Record execution reports independently from communication heartbeats. A transport-only renewal cannot refresh an old running or idle report, and a new connection alone does not establish execution state. Reports older than three minutes appear as unknown until explicitly refreshed.
+- Show execution report time separately from the last communication observation in station and task details. Older services without an independent report timestamp display conservative status.
+- Preserve existing sessions and native bindings during migration. The additional report table does not change legacy session row layout, allowing rollback without restoring old databases.
+
 ## 0.7.0
 
 - Add Link device-code pairing, local office attachment, remote office discovery and loopback gateways. The Windows portable package includes Link 0.3.0. Private servers, LAN, Wi-Fi and USB networking use the same pinned TLS transport; USB requires a network route or explicit tunnel.

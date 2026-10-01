@@ -73,7 +73,7 @@ def build(
         "sequence": sequence,
         "created_at": int(time.time()),
         "minimum_updater": 1,
-        "notes": "新增Link设备码与跨设备工位连接，Windows包附带Link0.3.0；支持私人服务器、局域网、Wi-Fi和USB网络。端到端加密保留Agent原身份、显式交接及未知写入核对；只读办公室共享需主动开启。完善公开中心与Agent接入协议。",
+        "notes": "修复通信续租使旧执行状态持续显示正在工作的问题。执行上报与通信时间独立记录；没有执行报告或报告过期时显示待同步。工位和任务详情分别显示运行上报时间与最近通信观测，保留原身份、会话与数据。Windows包继续内置Link0.3.0。",
         "runtimes": {"link": link},
         "source": {
             "path": "/artifacts/" + source.name,

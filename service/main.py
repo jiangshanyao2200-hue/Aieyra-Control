@@ -59,7 +59,7 @@ from paths import (
     initialize as initialize_paths,
 )
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 ROOT = Path(__file__).resolve().parent.parent
 
 

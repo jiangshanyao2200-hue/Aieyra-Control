@@ -52,6 +52,7 @@ const get = (route) =>
 const writes = [],
   external = [],
   errors = [],
+  requests = [],
   checks = [];
 const server = createServer(async (req, res) => {
   try {
@@ -63,6 +64,7 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname.startsWith('/api/')) {
       const v = await get(req.url);
+      requests.push({ path: req.url, status: v.status, at: new Date().toISOString() });
       res.writeHead(v.status, { 'content-type': 'application/json' });
       return res.end(JSON.stringify(v.body));
     }
@@ -93,6 +95,8 @@ const browser = await chromium.launch({
   headless: true,
   executablePath: process.env.CONTROL_CHROME,
 });
+let activePage = null,
+  failure = null;
 try {
   for (const size of [
     { width: 1440, height: 940 },
@@ -100,6 +104,7 @@ try {
   ]) {
     const context = await browser.newContext({ viewport: size });
     const page = await context.newPage();
+    activePage = page;
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.route('**/*', (route) => {
       if (!route.request().url().startsWith(base)) {
@@ -119,13 +124,26 @@ try {
         document.querySelector('#main').dataset.refreshing === 'false',
     );
     const seats = await page.locator('[data-seat]').count();
-    assert.ok(seats >= 6);
+    assert.ok(seats > 0, 'The connected office should have registered workstations.');
+    const registry = await get('/api/registry');
+    assert.equal(registry.status, 200);
+    const registered = new Set(registry.body.seats.map((seat) => seat.id));
+    const visible = await page
+      .locator('[data-seat]')
+      .evaluateAll((items) => items.map((item) => item.dataset.seat));
+    assert.equal(new Set(visible).size, visible.length, 'Workstations must not be duplicated.');
+    assert.ok(
+      visible.every((id) => registered.has(id)),
+      'Visible workstations must be registered.',
+    );
     assert.equal(
       await page.locator('textarea,form,nav:not(.home-sidebar),input,select').count(),
       0,
     );
     assert.ok(!(await page.locator('#home-grid').innerText()).includes('离线'));
-    assert.equal(await page.locator('.home-orb').count(), 3);
+    for (const id of ['open-tasks', 'open-chat', 'open-link', 'open-account'])
+      assert.equal(await page.locator('#' + id).count(), 1);
+    assert.equal(await page.locator('.home-orb').count(), 4);
     await page.waitForTimeout(350);
     await page.screenshot({ path: path.join(out, 'live-' + size.width + '.png') });
     await page.locator('[data-seat]').first().click();
@@ -152,16 +170,26 @@ try {
     await page.keyboard.press('Escape');
     checks.push({ width: size.width, seats, messages, tasks, read_only: true });
     await context.close();
+    activePage = null;
   }
   assert.deepEqual(writes, []);
   assert.deepEqual(external, []);
   assert.deepEqual(errors, []);
+  console.log(JSON.stringify({ passed: true, checks }));
+} catch (error) {
+  failure = { name: error.name, message: error.message, stack: error.stack };
+  if (activePage && !activePage.isClosed())
+    await activePage.screenshot({ path: path.join(out, 'failure.png') }).catch(() => {});
+  throw error;
+} finally {
   await writeFile(
     path.join(out, 'results.json'),
-    JSON.stringify({ passed: true, checks, writes, external, errors }, null, 2),
+    JSON.stringify(
+      { passed: failure === null, checks, writes, external, errors, requests, failure },
+      null,
+      2,
+    ),
   );
-  console.log(JSON.stringify({ passed: true, checks }));
-} finally {
   await browser.close();
   bridge.stdin.end();
   bridge.kill();

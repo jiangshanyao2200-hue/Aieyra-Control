@@ -1019,13 +1019,22 @@ server.serve_forever()
         delivery = self.deliver()
         self.receipt(delivery, "received")
         self.receipt(delivery, "running")
+        actor = self.enrolled["credential"]["actor_id"]
+        running = self.app.agent_access.runtimes()[actor]["runtime"]
+        self.assertEqual(running["last_reported_state"], "running")
+        self.assertIsNotNone(running["runtime_reported_at"])
         result = self.client.call("heartbeat", {"request_id": "renew-only", "session_id": self.sid})
         self.assertEqual(result["session"]["runtime_state"], "running")
+        renewed = self.app.agent_access.runtimes()[actor]["runtime"]
+        self.assertEqual(renewed["runtime_reported_at"], running["runtime_reported_at"])
         self.receipt(delivery, "completed", reply="Done")
         result = self.client.call(
             "heartbeat", {"request_id": "renew-again", "session_id": self.sid}
         )
         self.assertEqual(result["session"]["runtime_state"], "idle")
+        final = self.app.agent_access.runtimes()[actor]["runtime"]
+        self.assertEqual(final["last_reported_state"], "idle")
+        self.assertNotEqual(final["runtime_reported_at"], running["runtime_reported_at"])
 
     def test_disconnect_syncs_previously_clean_requirement_delivery(self):
         from test_requirement_delivery import DeliveryHub

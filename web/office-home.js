@@ -15,6 +15,7 @@ import {
   stationColor,
   palette,
   communicationCurrent,
+  executionReportedAt,
 } from './station-model.js';
 import { stationCodes, recentMessages, homeLayout } from './office-home-model.js';
 import { createAccountPanel } from './account.js';
@@ -106,7 +107,7 @@ function communicationFacts(agent = {}, current = true) {
         : labels[r.session_state] ||
           (at > 0 && at <= Date.now() ? labels.expired : L('状态待同步', 'Awaiting update')),
     last = r.last_reported_state || (connected ? r.state : '');
-  return `<dt>${L('通信状态', 'Communication')}</dt><dd>${esc(label)}</dd><dt>${L('通信租约', 'Communication lease')}</dt><dd>${esc(known ? leaseLabel(r.lease_until) : L('状态待同步', 'Awaiting update'))}</dd><dt>${L('最后运行上报', 'Last reported execution')}</dt><dd>${esc(last ? statusLabel(last, language) : L('暂无记录', 'No record'))}</dd><dt>${L('最近通信观测', 'Last communication observation')}</dt><dd>${esc(clock(r.observed_at || r.last_activity_at, true))}</dd>`;
+  return `<dt>${L('通信状态', 'Communication')}</dt><dd>${esc(label)}</dd><dt>${L('通信租约', 'Communication lease')}</dt><dd>${esc(known ? leaseLabel(r.lease_until) : L('状态待同步', 'Awaiting update'))}</dd><dt>${L('最后运行上报', 'Last reported execution')}</dt><dd>${esc(last ? statusLabel(last, language) : L('暂无记录', 'No record'))}</dd><dt>${L('运行上报时间', 'Execution reported at')}</dt><dd>${esc(clock(executionReportedAt(r), true))}</dd><dt>${L('最近通信观测', 'Last communication observation')}</dt><dd>${esc(clock(r.observed_at || r.last_activity_at, true))}</dd>`;
 }
 function assignColors() {
   const used = new Set(colors.values());

@@ -2,8 +2,10 @@
 
 import secrets
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from test_control import control
 from agent_access import AgentError
 
@@ -159,6 +161,74 @@ class StationContinuityTests(unittest.TestCase):
         self.assertEqual(final["lease_until"], 0)
         self.assertEqual(final["session_state"], "disconnected")
         self.assertFalse(final["bound"])
+
+    def test_transport_renewal_does_not_refresh_execution_evidence(self):
+        self.join(self.worker, self.worker_seat, "worker-one", "native-worker")
+        self.access.mutate(
+            self.worker,
+            "heartbeat",
+            {
+                "request_id": "report-running",
+                "session_id": "worker-one",
+                "runtime_state": "running",
+            },
+        )
+        first = self.access.runtimes()[self.worker["actor_id"]]["runtime"]
+        later = time.time() + 240
+        with self.app.store.db() as db:
+            db.execute(
+                "UPDATE agent_sessions SET lease_until=? WHERE id='worker-one'", (later + 90,)
+            )
+        with patch("agent_access.time.time", return_value=later):
+            self.access.mutate(
+                self.worker,
+                "heartbeat",
+                {"request_id": "renew-only", "session_id": "worker-one"},
+            )
+            renewed = self.access.runtimes()[self.worker["actor_id"]]["runtime"]
+        self.assertEqual(renewed["last_activity_at"], first["last_activity_at"])
+        self.assertNotEqual(renewed["observed_at"], first["observed_at"])
+        self.assertTrue(renewed["bound"])
+        self.assertEqual(renewed["last_reported_state"], "running")
+        self.assertEqual(renewed["state"], "unknown")
+
+    def test_connect_alone_does_not_report_native_execution(self):
+        self.join(self.worker, self.worker_seat, "worker-one", "native-worker")
+        runtime = self.access.runtimes()[self.worker["actor_id"]]["runtime"]
+        self.assertTrue(runtime["bound"])
+        self.assertEqual(runtime["state"], "unknown")
+        self.assertIsNone(runtime["last_reported_state"])
+        self.assertIsNone(runtime["runtime_reported_at"])
+
+    def test_upgrade_preserves_sessions_without_inventing_execution_reports(self):
+        self.join(self.worker, self.worker_seat, "legacy-session", "native-worker")
+        with self.app.store.db() as db:
+            db.execute("DROP TABLE agent_runtime_reports")
+            db.execute(
+                "UPDATE agent_sessions SET runtime_state='running' WHERE id='legacy-session'"
+            )
+            columns = [row[1] for row in db.execute("PRAGMA table_info(agent_sessions)")]
+        reopened = control.Application({"coordination_mode": "local"}, Path(self.tmp.name))
+        runtime = reopened.agent_access.runtimes()[self.worker["actor_id"]]["runtime"]
+        self.assertEqual(runtime["state"], "unknown")
+        self.assertIsNone(runtime["runtime_reported_at"])
+        self.assertTrue(runtime["bound"])
+        with self.app.store.db() as db:
+            self.assertEqual(
+                columns, [row[1] for row in db.execute("PRAGMA table_info(agent_sessions)")]
+            )
+        reopened.agent_access.mutate(
+            self.worker,
+            "heartbeat",
+            {
+                "request_id": "new-report",
+                "session_id": "legacy-session",
+                "runtime_state": "running",
+            },
+        )
+        fresh = reopened.agent_access.runtimes()[self.worker["actor_id"]]["runtime"]
+        self.assertEqual(fresh["state"], "running")
+        self.assertIsNotNone(fresh["runtime_reported_at"])
 
     def test_membership_removal_and_leader_enrollment_preserve_history(self):
         self.join(self.worker, self.worker_seat, "worker-one", "native-worker")

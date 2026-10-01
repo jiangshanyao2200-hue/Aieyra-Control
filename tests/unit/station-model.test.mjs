@@ -30,3 +30,19 @@ test('native evidence without a transport lease still follows its own freshness'
   assert.equal(presence(native, true, now).state, 'running');
   assert.equal(presence(native, false, now).state, 'sync');
 });
+
+test('explicit execution report time takes precedence over transport observations', () => {
+  for (const runtime_reported_at of [null, 'bad', new Date(now - 240000).toISOString()]) {
+    const reported = agent({ runtime_reported_at, observed_at: new Date(now).toISOString() });
+    assert.equal(presence(reported, true, now).state, 'sync');
+  }
+  assert.equal(
+    presence(agent({ runtime_reported_at: new Date(now).toISOString() }), true, now).state,
+    'running',
+  );
+});
+
+test('legacy transport observations are not execution evidence', () => {
+  const legacy = agent({ adapter: 'aieyra-agent/1', observed_at: new Date(now).toISOString() });
+  assert.equal(presence(legacy, true, now).state, 'sync');
+});

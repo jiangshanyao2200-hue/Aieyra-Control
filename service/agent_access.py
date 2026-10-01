@@ -80,6 +80,7 @@ WRITES = frozenset(
 )
 TERMINAL = {"completed", "failed", "interrupted"}
 LEASE_SECONDS = 90
+RUNTIME_REPORT_SECONDS = 180
 
 
 def stamp(value=None):
@@ -139,6 +140,8 @@ class AgentAccess:
                     native_session_id TEXT NOT NULL,version INTEGER NOT NULL,updated REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS agent_session_native(
                     session_id TEXT PRIMARY KEY,native_session_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS agent_runtime_reports(
+                    session_id TEXT PRIMARY KEY,state TEXT NOT NULL,reported REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS agent_station_audit(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,actor_id TEXT NOT NULL,
                     action TEXT NOT NULL,document TEXT NOT NULL,created REAL NOT NULL);
@@ -624,6 +627,8 @@ class AgentAccess:
                             sid,
                         ),
                     )
+                    if "runtime_state" in value:
+                        self.record_runtime(db, sid, state, session["observed"])
                     result = {"session": session}
                 elif action == "disconnect":
                     self.close_session(db, sid, "disconnected")
@@ -641,6 +646,15 @@ class AgentAccess:
             (peer["id"], rid, hashed, canonical(result)),
         )
         self.store.event(db, "agent." + action, oid)
+
+    def record_runtime(self, db, session_id, state, reported):
+        # A separate table keeps old session rows and rollback writers compatible.
+        # Historical transport observations cannot establish an execution report.
+        db.execute(
+            "INSERT INTO agent_runtime_reports(session_id,state,reported) VALUES(?,?,?) "
+            "ON CONFLICT(session_id) DO UPDATE SET state=excluded.state,reported=excluded.reported",
+            (session_id, state, reported),
+        )
 
     def receipt(self, db, peer, session, value):
         row = db.execute(
@@ -688,10 +702,12 @@ class AgentAccess:
                 ("bridge:" + session["id"],),
             ).fetchone()
             runtime_state = "running" if remaining else "idle"
+            reported = time.time()
             db.execute(
                 "UPDATE agent_sessions SET runtime_state=?,observed=? WHERE id=?",
-                (runtime_state, time.time(), session["id"]),
+                (runtime_state, reported, session["id"]),
             )
+            self.record_runtime(db, session["id"], runtime_state, reported)
         db.execute(
             "UPDATE deliveries SET intake_dirty=CASE WHEN intake_context IS NULL THEN 0 ELSE 1 END WHERE id=?",
             (row["id"],),
@@ -840,29 +856,40 @@ class AgentAccess:
             rows = [
                 dict(r)
                 for r in db.execute(
-                    "SELECT s.*,c.name,c.project,c.revoked,n.native_session_id FROM agent_sessions s JOIN agent_credentials c ON c.id=s.credential_id LEFT JOIN agent_session_native n ON n.session_id=s.id WHERE c.revoked=0 ORDER BY s.observed"
+                    "SELECT s.*,c.name,c.project,c.revoked,n.native_session_id,"
+                    "r.state AS reported_state,r.reported AS runtime_reported "
+                    "FROM agent_sessions s JOIN agent_credentials c ON c.id=s.credential_id "
+                    "LEFT JOIN agent_session_native n ON n.session_id=s.id "
+                    "LEFT JOIN agent_runtime_reports r ON r.session_id=s.id "
+                    "WHERE c.revoked=0 ORDER BY s.observed"
                 )
             ]
         result = {}
         for row in rows:
             active = row["state"] == "connected" and not row["revoked"]
             fresh = active and time.time() - row["center_checked"] <= LEASE_SECONDS
+            reported = row["runtime_reported"]
+            execution_fresh = (
+                reported is not None and -60 <= time.time() - reported <= RUNTIME_REPORT_SECONDS
+            )
+            reported_at = stamp(reported) if reported is not None else None
             result[row["actor_id"]] = {
                 "id": row["actor_id"],
                 "name": row["name"],
                 "project": row["project"],
                 "runtime": {
                     "bound": fresh,
-                    "state": row["runtime_state"] if fresh else "unknown",
+                    "state": row["reported_state"] if fresh and execution_fresh else "unknown",
                     "stale": not fresh,
                     "thread_id": "bridge:" + row["id"],
                     "workstation_id": row["seat_id"],
                     "seat_id": row["seat_id"],
                     "native_session_id": row["native_session_id"],
                     "lease_until": row["lease_until"],
-                    "last_reported_state": row["runtime_state"],
+                    "last_reported_state": row["reported_state"],
+                    "runtime_reported_at": reported_at,
                     "observed_at": stamp(row["observed"]),
-                    "last_activity_at": stamp(row["observed"]),
+                    "last_activity_at": reported_at,
                     "evidence": "agent_report",
                     "adapter": "aieyra-agent/1",
                     "session_state": row["state"],

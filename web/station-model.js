@@ -36,9 +36,16 @@ export function communicationCurrent(runtime, now = Date.now()) {
 
 // Execution evidence and transport leases have different lifetimes. A missing
 // transport heartbeat says nothing about whether the native agent is working.
+export function executionReportedAt(runtime = {}) {
+  if (Object.hasOwn(runtime, 'runtime_reported_at')) return runtime.runtime_reported_at;
+  // Older bridge snapshots used their transport heartbeat as last_activity_at.
+  if (runtime.adapter === 'aieyra-agent/1') return null;
+  return runtime.last_activity_at || runtime.observed_at;
+}
+
 export function presence(agent = {}, reachable = true, now = Date.now()) {
   const runtime = agent.runtime || {},
-    at = runtime.last_activity_at || runtime.observed_at;
+    at = executionReportedAt(runtime);
   if (reachable && communicationCurrent(runtime, now) && fresh(at, now)) {
     if (['running', 'busy'].includes(runtime.state))
       return { state: 'running', tone: 'active', at, source: runtime.evidence || 'agent_report' };
