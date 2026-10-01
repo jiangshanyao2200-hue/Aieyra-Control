@@ -35,6 +35,9 @@ API = "https://api.aieyra.cn"
 CALLBACKS = {SITE + "/auth/callback", CLOUD + "/auth/callback"}
 SESSION_COOKIE = "__Host-control-session"
 SOURCE_REPOSITORY = "https://github.com/jiangshanyao2200-hue/Aieyra-Control"
+# Downloads use available bandwidth; leave request slots for login, pages and events.
+DOWNLOADS_PER_USER = 8
+DOWNLOADS_TOTAL = 32
 
 
 class Error(Exception):
@@ -554,7 +557,9 @@ class Handler(BaseHTTPRequestHandler):
         token = self.token()
         session = self.server.app.session(token)
         self.server.app.require_product_access(session)
-        with self.server.app.capacity("download", session["subject"], 3, 16):
+        with self.server.app.capacity(
+            "download", session["subject"], DOWNLOADS_PER_USER, DOWNLOADS_TOTAL
+        ):
             return self.send_artifact(path, token)
 
     def send_artifact(self, path, token):

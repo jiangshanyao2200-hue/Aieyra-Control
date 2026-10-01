@@ -3,6 +3,8 @@ import json
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 from test_cloud import cloud, CloudTests
 
 
@@ -87,6 +89,87 @@ class DistributionTests(CloudTests):
             self.path, {**auth, "Range": "bytes=2-4"}, method="HEAD"
         )
         self.assertEqual((status, raw, headers["Content-Length"]), (200, b"", "10"))
+
+    def check_parallel_downloads(self, users, per_user):
+        tokens = []
+        for user in range(users + 1):
+            self.app.identity = lambda cookie, user=user: {
+                "subject": "download-fixture-" + str(user),
+                "name": "Fixture",
+            }
+            tokens.append(self.token())
+        count = users * per_user
+        entered = 0
+        condition = threading.Condition()
+        release = threading.Event()
+        original = cloud.Handler.send_artifact
+
+        def held_download(handler, path, token):
+            nonlocal entered
+            with condition:
+                entered += 1
+                condition.notify_all()
+            if not release.wait(15):
+                raise RuntimeError("download fixture timed out")
+            return original(handler, path, token)
+
+        with (
+            patch.object(cloud.Handler, "send_artifact", held_download),
+            ThreadPoolExecutor(max_workers=count) as workers,
+        ):
+            futures = [
+                workers.submit(
+                    self.request,
+                    self.path,
+                    {"Authorization": "Bearer " + tokens[user], "Range": "bytes=2-4"},
+                )
+                for user in range(users)
+                for _ in range(per_user)
+            ]
+            try:
+                with condition:
+                    self.assertTrue(condition.wait_for(lambda: entered == count, timeout=8))
+                # Per-account and global pressure must not consume API/page capacity.
+                rejected = tokens[0] if users == 1 else tokens[-1]
+                status, headers, body = self.request(
+                    self.path, {"Authorization": "Bearer " + rejected}
+                )
+                self.assertEqual(status, 429)
+                self.assertEqual(json.loads(body)["error"], "connection_capacity")
+                self.assertIn("Retry-After", headers)
+                auth = {"Authorization": "Bearer " + tokens[0]}
+                for path in ("/", "/v1/session", "/v1/releases/stable"):
+                    self.assertEqual(self.request(path, auth)[0], 200)
+                login = {
+                    "challenge": cloud.challenge("fixture-verifier"),
+                    "state": "s" * 43,
+                    "scope": "desktop",
+                    "redirect_uri": cloud.CLOUD + "/auth/callback",
+                }
+                self.assertEqual(
+                    self.request(
+                        "/v1/auth/start",
+                        {"Content-Type": "application/json"},
+                        body=login,
+                        method="POST",
+                    )[0],
+                    200,
+                )
+            finally:
+                release.set()
+            for future in futures:
+                status, headers, body = future.result(timeout=10)
+                self.assertEqual(
+                    (status, body, headers["Content-Range"]), (206, b"345", "bytes 2-4/10")
+                )
+        self.assertEqual(self.app.connection_counts, {})
+        self.assertEqual(self.request(self.path, auth)[0], 200)
+
+    def test_eight_parallel_downloads_per_account_keep_login_and_pages_available(self):
+        self.check_parallel_downloads(users=1, per_user=8)
+
+    def test_32_parallel_downloads_keep_login_and_pages_available(self):
+        self.check_parallel_downloads(users=4, per_user=8)
 
     def test_static_conditional_cache_and_head_keep_security_headers(self):
         for path in (
