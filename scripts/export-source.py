@@ -218,6 +218,8 @@ def sources(include_development=False):
     names = [
         "agent-client.py",
         "agent-station.py",
+        "control.py",
+        "station-transfer.py",
         "enroll-agent.py",
         "update-control.py",
         "verify-release.cjs",
@@ -256,6 +258,7 @@ def sources(include_development=False):
     files["docs/AGENT_ADAPTERS.md"] = (ROOT / "docs/AGENT_ADAPTERS.md").read_bytes()
     files["docs/MATRIX_GROWTH.md"] = (ROOT / "docs/MATRIX_GROWTH.md").read_bytes()
     files["docs/LINK.md"] = (ROOT / "docs/LINK.md").read_bytes()
+    files["docs/LINUX_TERMUX.md"] = (ROOT / "docs/LINUX_TERMUX.md").read_bytes()
     for name in ["DEVELOPMENT.md", "ARCHITECTURE.md", "CHANGELOG.md"]:
         files["docs/" + name] = (ROOT / "docs" / name).read_bytes()
     if include_development:

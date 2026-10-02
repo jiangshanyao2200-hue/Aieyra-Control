@@ -8,6 +8,7 @@
 
 - Windows：完整解压到可写文件夹，双击 **Aieyra Control.exe**。
 - macOS：选择 Apple 芯片或 Intel 版本，完整解压并保留整个文件夹，打开 **Aieyra Control.app**。当前应用使用临时签名，尚无 Apple 公证；系统可能要求在“隐私与安全性”中允许打开。
+- Linux / Android Termux：Python 3.11+ 可执行 `python scripts/control.py run` 启动无桌面依赖的本地服务；手机加入电脑工位使用 Link 网关和私有档案导入，见 [Linux / Termux 指南](docs/LINUX_TERMUX.md)。
 - 源码：安装 Python 3.11+、Node.js 22.12+，在 `desktop` 执行 `npm ci`，然后 `npm start`。运行环境随官网下载包附带。
 
 官网下载与官方更新需要 Aieyra 账号。左侧登录入口打开独立账号窗口，授权后自动连接。未登录可使用本地办公室、从 GitHub 获取源码。

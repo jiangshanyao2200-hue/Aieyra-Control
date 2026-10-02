@@ -1,5 +1,7 @@
 # 用 Link 连接设备与工位
 
+Linux / Android Termux 的无桌面启动、原生 Link 源码构建及手机工位档案导入，见 [Linux / Termux 指南](LINUX_TERMUX.md)。
+
 Control 0.7 的“连接”入口使用 Aieyra Link 0.3。Link 部署在你自己的电脑或私人服务器上，通过设备码把设备接到同一中继。它不要求官方云服务或账号；本地办公室继续保存在本地。Windows 完整发行包内置 Link，源码安装可将经核验的可执行文件放到 `runtime/link/aieyra-link.exe`（Linux/macOS 为 `aieyra-link`），或用绝对路径环境变量 `AIEYRA_LINK_BINARY` 指定。
 
 ## 部署到私人服务器
