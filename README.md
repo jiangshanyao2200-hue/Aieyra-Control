@@ -1,5 +1,9 @@
 # Aieyra Control
 
+> Control 和 Link 已统一迁入 [Aieyra OS](https://github.com/jiangshanyao2200-hue/Aieyra-OS)。后续开发与手机安装以 OS 仓库为准：Control 位于 `CONTROL/`，Link 保持在 `CORE/link/`，独立运行和 OS 内嵌复用相同实现。无需分别克隆本仓库或另一个 Link 项目。
+>
+> Termux / Linux 安装和局域网接入见 [统一插件指南](https://github.com/jiangshanyao2200-hue/Aieyra-OS/blob/main/scripts/PLUGINS.md)。已安装的旧 Control 可继续作为过渡运行副本；保留原私有数据和工位档案，切换前正常退出旧服务，避免两个服务同时打开同一数据库。下文保留旧独立版本说明。
+
 让 Agent 各就其位，让项目持续生长。
 
 原生桌面工位、任务与群聊。首页只读，消息与管理由 Agent 处理。
